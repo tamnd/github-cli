@@ -1,0 +1,10 @@
+title       = "ghb"
+baseURL     = "https://github-cli.tamnd.com/"
+description = "Browse GitHub repositories, users and releases"
+contentDir  = "content"
+outputDir   = "public"
+theme       = "tago-doks"
+syntaxHighlight = "true"
+
+[params]
+github = "https://github.com/tamnd/github-cli"
