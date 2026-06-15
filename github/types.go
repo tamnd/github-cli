@@ -1,130 +1,130 @@
+// Package github is the scraper library behind the github CLI.
+// It reads public GitHub data from HTML pages, Atom feeds, and
+// raw.githubusercontent.com. No API key or authentication is required.
+//
+// github is an independent tool and is not affiliated with GitHub or Microsoft.
 package github
 
-import "fmt"
-
-// Repo is the record emitted for repository commands.
-type Repo struct {
-	Rank        int    `json:"rank"`
-	FullName    string `json:"full_name"`
-	Description string `json:"description"`
-	Language    string `json:"language"`
-	Stars       int    `json:"stars"`
-	Forks       int    `json:"forks"`
-	License     string `json:"license"`
-	PushedAt    string `json:"pushed_at"`
-	URL         string `json:"url"`
+// TrendingRepo is one entry from the GitHub trending page.
+type TrendingRepo struct {
+	Rank        int    `json:"rank"          table:"Rank,right"`
+	FullName    string `json:"full_name"     table:"Repo"`
+	Description string `json:"description"   table:"Description"`
+	Language    string `json:"language"      table:"Lang"`
+	Stars       int    `json:"stars"         table:"Stars,right"`
+	Forks       int    `json:"forks"         table:"Forks,right"`
+	PeriodStars int    `json:"period_stars"  table:"New Stars,right"`
+	URL         string `json:"url"           table:"-"             kit:"url"`
 }
 
-// User is the record emitted for user commands.
+// User is a GitHub user profile record.
+// It is also used for the followers and following listings;
+// counts are 0 on listing pages where they are not shown.
 type User struct {
-	Login     string `json:"login"`
-	Name      string `json:"name"`
-	Company   string `json:"company"`
-	Location  string `json:"location"`
-	Followers int    `json:"followers"`
-	Repos     int    `json:"repos"`
-	Bio       string `json:"bio"`
-	URL       string `json:"url"`
+	Login     string `json:"login"       table:"Login"`
+	Name      string `json:"name"        table:"Name"`
+	Bio       string `json:"bio"         table:"-"`
+	Company   string `json:"company"     table:"Company"`
+	Location  string `json:"location"    table:"Location"`
+	Email     string `json:"email"       table:"-"`
+	Blog      string `json:"blog"        table:"-"`
+	Followers int    `json:"followers"   table:"Followers,right"`
+	Following int    `json:"following"   table:"Following,right"`
+	Repos     int    `json:"repos"       table:"Repos,right"`
+	URL       string `json:"url"         table:"-"              kit:"url"`
 }
 
-// Release is the record emitted for the releases command.
+// Repo is a repository record used by both repo (single) and repos (list).
+type Repo struct {
+	FullName      string   `json:"full_name"       table:"Repo"`
+	Description   string   `json:"description"     table:"Description"`
+	Language      string   `json:"language"        table:"Lang"`
+	Stars         int      `json:"stars"           table:"Stars,right"`
+	Forks         int      `json:"forks"           table:"Forks,right"`
+	Watchers      int      `json:"watchers"        table:"-"`
+	OpenIssues    int      `json:"open_issues"     table:"Issues,right"`
+	DefaultBranch string   `json:"default_branch"  table:"-"`
+	License       string   `json:"license"         table:"License"`
+	Topics        []string `json:"topics"          table:"-"`
+	Fork          bool     `json:"fork"            table:"-"`
+	Archived      bool     `json:"archived"        table:"-"`
+	PushedAt      string   `json:"pushed_at"       table:"Pushed"`
+	CreatedAt     string   `json:"created_at"      table:"-"`
+	UpdatedAt     string   `json:"updated_at"      table:"-"`
+	URL           string   `json:"url"             table:"-"              kit:"url"`
+}
+
+// Commit is one entry from the commits Atom feed.
+type Commit struct {
+	SHA     string `json:"sha"      table:"SHA"`
+	Message string `json:"message"  table:"Message"`
+	Author  string `json:"author"   table:"Author"`
+	Date    string `json:"date"     table:"Date"`
+	URL     string `json:"url"      table:"-"    kit:"url"`
+}
+
+// Release is one entry from the releases Atom feed.
 type Release struct {
-	Rank       int    `json:"rank"`
-	TagName    string `json:"tag_name"`
-	Name       string `json:"name"`
-	Prerelease bool   `json:"prerelease"`
-	CreatedAt  string `json:"created_at"`
-	URL        string `json:"url"`
+	Tag       string `json:"tag"       table:"Tag"`
+	Name      string `json:"name"      table:"Name"`
+	Author    string `json:"author"    table:"Author"`
+	Published string `json:"published" table:"Published"`
+	URL       string `json:"url"       table:"-"    kit:"url"`
 }
 
-// ─── wire types from GitHub REST API ─────────────────────────────────────────
-
-type wireRepo struct {
-	ID          int     `json:"id"`
-	FullName    string  `json:"full_name"`
-	Description *string `json:"description"`
-	HTMLURL     string  `json:"html_url"`
-	Stars       int     `json:"stargazers_count"`
-	Forks       int     `json:"forks_count"`
-	Language    *string `json:"language"`
-	License     *struct {
-		SPDXID string `json:"spdx_id"`
-	} `json:"license"`
-	PushedAt string `json:"pushed_at"`
+// Tag is one entry from the tags Atom feed.
+type Tag struct {
+	Name    string `json:"name"    table:"Tag"`
+	Updated string `json:"updated" table:"Updated"`
+	URL     string `json:"url"     table:"-"    kit:"url"`
 }
 
-type wireUser struct {
-	Login       string  `json:"login"`
-	Name        *string `json:"name"`
-	Company     *string `json:"company"`
-	Location    *string `json:"location"`
-	Bio         *string `json:"bio"`
-	PublicRepos int     `json:"public_repos"`
-	Followers   int     `json:"followers"`
-	HTMLURL     string  `json:"html_url"`
+// Issue is one issue row scraped from the issues HTML page.
+type Issue struct {
+	Number    int    `json:"number"     table:"#,right"`
+	Title     string `json:"title"      table:"Title"`
+	State     string `json:"state"      table:"State"`
+	Author    string `json:"author"     table:"Author"`
+	Comments  int    `json:"comments"   table:"Comments,right"`
+	Labels    string `json:"labels"     table:"Labels"`
+	CreatedAt string `json:"created_at" table:"Created"`
+	URL       string `json:"url"        table:"-"    kit:"url"`
 }
 
-type wireRelease struct {
-	TagName    string `json:"tag_name"`
-	Name       string `json:"name"`
-	Prerelease bool   `json:"prerelease"`
-	Draft      bool   `json:"draft"`
-	CreatedAt  string `json:"created_at"`
-	HTMLURL    string `json:"html_url"`
+// PullRequest is one PR row scraped from the pulls HTML page.
+type PullRequest struct {
+	Number    int    `json:"number"     table:"#,right"`
+	Title     string `json:"title"      table:"Title"`
+	State     string `json:"state"      table:"State"`
+	Author    string `json:"author"     table:"Author"`
+	Comments  int    `json:"comments"   table:"Comments,right"`
+	CreatedAt string `json:"created_at" table:"Created"`
+	URL       string `json:"url"        table:"-"    kit:"url"`
 }
 
-type searchReposResp struct {
-	TotalCount int        `json:"total_count"`
-	Items      []wireRepo `json:"items"`
+// SearchRepo is one repository card from the search results page.
+type SearchRepo struct {
+	Rank        int    `json:"rank"         table:"Rank,right"`
+	FullName    string `json:"full_name"    table:"Repo"`
+	Description string `json:"description"  table:"Description"`
+	Language    string `json:"language"     table:"Lang"`
+	Stars       int    `json:"stars"        table:"Stars,right"`
+	UpdatedAt   string `json:"updated_at"   table:"Updated"`
+	URL         string `json:"url"          table:"-"   kit:"url"`
 }
 
-// ─── converters ──────────────────────────────────────────────────────────────
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
+// StarredRepo is one repository card from the stars tab.
+type StarredRepo struct {
+	FullName    string `json:"full_name"    table:"Repo"`
+	Description string `json:"description"  table:"Description"`
+	Language    string `json:"language"     table:"Lang"`
+	Stars       int    `json:"stars"        table:"Stars,right"`
+	URL         string `json:"url"          table:"-"   kit:"url"`
 }
 
-func wireRepoToRepo(w wireRepo, rank int) Repo {
-	lic := ""
-	if w.License != nil {
-		lic = w.License.SPDXID
-	}
-	return Repo{
-		Rank:        rank,
-		FullName:    w.FullName,
-		Description: deref(w.Description),
-		Language:    deref(w.Language),
-		Stars:       w.Stars,
-		Forks:       w.Forks,
-		License:     lic,
-		PushedAt:    w.PushedAt,
-		URL:         w.HTMLURL,
-	}
-}
-
-func wireUserToUser(w wireUser) User {
-	return User{
-		Login:     w.Login,
-		Name:      deref(w.Name),
-		Company:   deref(w.Company),
-		Location:  deref(w.Location),
-		Followers: w.Followers,
-		Repos:     w.PublicRepos,
-		Bio:       deref(w.Bio),
-		URL:       fmt.Sprintf("https://github.com/%s", w.Login),
-	}
-}
-
-func wireReleaseToRelease(w wireRelease, rank int) Release {
-	return Release{
-		Rank:       rank,
-		TagName:    w.TagName,
-		Name:       w.Name,
-		Prerelease: w.Prerelease,
-		CreatedAt:  w.CreatedAt,
-		URL:        w.HTMLURL,
-	}
+// FileContent is the result of the readme and file commands.
+type FileContent struct {
+	Path    string `json:"path"    table:"Path"`
+	Content string `json:"content" table:"-"`
+	URL     string `json:"url"     table:"-"   kit:"url"`
 }

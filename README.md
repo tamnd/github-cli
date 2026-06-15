@@ -1,63 +1,90 @@
-# ghb
+# github-cli
 
-Browse GitHub repositories, users and releases
+A command-line for GitHub that reads public data by scraping HTML pages and
+Atom feeds. No API key required. No rate limit from the official REST API.
 
-`ghb` is a single pure-Go binary. It speaks to github over plain
-HTTPS, shapes the responses into clean records, and pipes into the rest of your
-tools. No API key, nothing to run alongside it.
+**Not affiliated with GitHub or Microsoft Corporation.**
 
 ## Install
 
 ```bash
-go install github.com/tamnd/github-cli/cmd/ghb@latest
+go install github.com/tamnd/github-cli/cmd/github@latest
 ```
 
-Or grab a prebuilt binary from the [releases](https://github.com/tamnd/github-cli/releases), or run
-the container image:
+Or grab a prebuilt binary from the
+[releases](https://github.com/tamnd/github-cli/releases):
 
 ```bash
-docker run --rm ghcr.io/tamnd/ghb:latest --help
+# Linux/macOS
+curl -sSL https://github.com/tamnd/github-cli/releases/latest/download/github_linux_amd64.tar.gz | tar xz
+./github --help
 ```
 
-## Usage
+Or run the container image:
 
 ```bash
-ghb --help
-ghb version
+docker run --rm ghcr.io/tamnd/github:latest --help
 ```
 
-This is a fresh scaffold. The command tree starts with `version`; build out the
-real commands in `cli/` on top of the `github` library package.
+## Commands
 
-## Development
+| Command | Description | Source |
+|---------|-------------|--------|
+| `github trending` | Top trending repositories | HTML |
+| `github user <username>` | User profile | HTML |
+| `github repos <username>` | User's public repositories | HTML |
+| `github repo <owner/repo>` | Repository metadata | HTML |
+| `github commits <owner/repo>` | Recent commits | Atom feed |
+| `github releases <owner/repo>` | Releases | Atom feed |
+| `github tags <owner/repo>` | Tags | Atom feed |
+| `github issues <owner/repo>` | Issues | HTML |
+| `github pulls <owner/repo>` | Pull requests | HTML |
+| `github readme <owner/repo>` | README content | raw.githubusercontent.com |
+| `github file <owner/repo> <path>` | Any file | raw.githubusercontent.com |
+| `github search <query>` | Search repositories | HTML |
+| `github followers <username>` | User followers | HTML |
+| `github following <username>` | Users followed by user | HTML |
+| `github stars <username>` | Starred repositories | HTML |
 
-```
-cmd/ghb/   thin main, wires cli.Root into fang
-cli/                 the cobra command tree
-github/                the library: HTTP client and data models
-docs/                tago documentation site
-```
+## Examples
 
 ```bash
-make build      # ./bin/ghb
-make test       # go test ./...
-make vet        # go vet ./...
+# Trending Go repos today
+github trending --lang go
+
+# User profile as JSON
+github user torvalds -o json
+
+# Recent commits on main
+github commits golang/go
+
+# List open issues
+github issues golang/go
+
+# Search for HTTP libraries
+github search "http client"
+
+# Fetch the README
+github readme torvalds/linux
 ```
 
-## Releasing
+## Output formats
 
-Push a version tag and GitHub Actions runs GoReleaser, which builds the
-archives, Linux packages, the multi-arch GHCR image, checksums, SBOMs, and a
-cosign signature:
+Every command supports `-o table|json|jsonl|csv|tsv|url` and `--fields`.
 
 ```bash
-git tag v0.1.0
-git push --tags
+github trending -o jsonl | jq '.full_name'
+github repos torvalds --fields full_name,stars
 ```
 
-The Homebrew and Scoop steps self-disable until their tokens exist, so the first
-release works with no extra secrets.
+## Notes
+
+- HTML structure can change without notice. Parsers return empty strings on
+  missing fields rather than crashing.
+- Search may return HTTP 429 from datacenter IPs. The binary exits with code 5
+  when throttled. Add `--page 1` and wait a moment before retrying.
+- The default pacing is 500 ms between requests. Use `--delay` to adjust.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0

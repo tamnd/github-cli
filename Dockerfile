@@ -12,10 +12,10 @@ ARG TARGETPLATFORM
 
 # ca-certificates for HTTPS; tzdata for sane timestamps.
 RUN apk add --no-cache ca-certificates tzdata \
- && adduser -D -H -u 10001 ghb
+ && adduser -D -H -u 10001 github
 
-COPY $TARGETPLATFORM/ghb /usr/bin/ghb
+COPY $TARGETPLATFORM/github /usr/bin/github
 
-USER ghb
+USER github
 
-ENTRYPOINT ["/usr/bin/ghb"]
+ENTRYPOINT ["/usr/bin/github"]
