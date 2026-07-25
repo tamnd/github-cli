@@ -200,6 +200,13 @@ type Account struct {
 	Following        *int   `json:"following,omitempty"         table:"following"`
 	Starred          *int   `json:"starred,omitempty"           table:"-"`
 	RepoCount        *int   `json:"repo_count,omitempty"        table:"repos"`
+	// These three come from the navigation tabs, which is the only place
+	// either template states them. A tab with nothing in it carries no counter
+	// at all, so zero and absent are the same thing here and the field stays
+	// nil rather than claiming a zero it did not read.
+	PackageCount    *int `json:"package_count,omitempty"    table:"-"`
+	ProjectCount    *int `json:"project_count,omitempty"    table:"-"`
+	SponsoringCount *int `json:"sponsoring_count,omitempty" table:"-"`
 
 	CreatedAt *time.Time `json:"created_at,omitempty" table:"joined,time"`
 
@@ -223,11 +230,15 @@ type Account struct {
 type Org struct {
 	Account
 
-	VerifiedDomains []string       `json:"verified_domains,omitempty" table:"-"`
-	MemberCount     *int           `json:"member_count,omitempty"     table:"members"`
-	TopLanguages    map[string]int `json:"top_languages,omitempty"    table:"-"`
-	TopTopics       []string       `json:"top_topics,omitempty"       table:"-"`
-	IsEnterprise    bool           `json:"is_enterprise"              table:"-"`
+	VerifiedDomains []string `json:"verified_domains,omitempty" table:"-"`
+	MemberCount     *int     `json:"member_count,omitempty"     table:"members"`
+	// Members is the avatar strip on the front page, which is a sample and not
+	// the roster. It never sets MemberCount for that reason: `github members`
+	// walks /orgs/{login}/people for the real list.
+	Members      []string       `json:"members,omitempty"          table:"-"`
+	TopLanguages map[string]int `json:"top_languages,omitempty"    table:"-"`
+	TopTopics    []string       `json:"top_topics,omitempty"       table:"-"`
+	IsEnterprise bool           `json:"is_enterprise"              table:"-"`
 }
 
 // --- threads ---

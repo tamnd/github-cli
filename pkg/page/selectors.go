@@ -49,24 +49,81 @@ var ProfileBio = Sel{Class: "user-profile-bio", Attr: "data-bio-text"}
 // Verified 2026-07-25 against torvalds.
 var ProfileNames = Sel{Class: "vcard-names-container"}
 
-// ProfileFullName and ProfileNickname are the microformat pair. They carry the
-// same two fields as the microdata independently, which is why both are read:
-// a disagreement between them is recorded as a conflict rather than resolved,
-// because it would mean the page changed under us.
-// Verified 2026-07-25 against torvalds.
+// The microformat pair inside vcard-names. p-name is the display name and
+// p-nickname is the login, and they carry the same two facts the microdata
+// carries independently, which is why both are read: a disagreement between
+// them is recorded as a conflict rather than resolved, because it would mean
+// the page changed under us.
+// Verified 2026-07-25 against torvalds and sindresorhus.
 var (
-	ProfileFullName = Sel{Class: "p-nickname"}
+	ProfileFullName = Sel{Class: "p-name"}
+	ProfileNickname = Sel{Class: "p-nickname"}
 	ProfileVCardOrg = Sel{Class: "p-org"}
+	// p-label holds the location text inside the homeLocation list item.
+	ProfileVCardLabel = Sel{Class: "p-label"}
 )
 
-// ProfileTabCount matches the tab links that carry the follower, following,
-// and star counts. The count is in a bold span inside the anchor and is a
-// compact string like "313k", which is what ParseCompactCount is for.
-// Verified 2026-07-25 against torvalds.
+// ProfileDetail is one row of the vcard details list. Each row carries an
+// itemprop naming what it holds (worksFor, homeLocation, url, social, email),
+// so one selector plus the itemprop covers all five instead of five selectors
+// that each break separately.
+// Verified 2026-07-25 against sindresorhus, which has all of them but email.
+var (
+	ProfileDetail    = Sel{Tag: "li", Class: "vcard-detail"}
+	ProfileDetailURL = Sel{Tag: "a", Attr: "rel", AttrContains: "me"}
+	ProfileAnyLink   = Sel{Tag: "a", Attr: "href"}
+)
+
+// The tab links carrying the follower and following counts. The count is in a
+// bold span inside the anchor and is a compact string like "313k", which is
+// what ParseCompactCount is for. The href is absolute on a profile and relative
+// on an organization, so these match on a suffix.
+// Verified 2026-07-25 against torvalds and sindresorhus.
 var (
 	ProfileFollowers = Sel{Tag: "a", Attr: "href", AttrSuffix: "?tab=followers"}
 	ProfileFollowing = Sel{Tag: "a", Attr: "href", AttrSuffix: "?tab=following"}
 	ProfileStars     = Sel{Tag: "a", Attr: "href", AttrSuffix: "?tab=stars"}
+	ProfileBoldCount = Sel{Tag: "span", Class: "text-bold"}
+)
+
+// ProfileTabItem is one entry of the profile navigation. Each carries a
+// data-tab-item naming the tab and, when the tab is non-empty, a Counter span
+// with the number in it. That is where the repository, project, package, star,
+// and sponsoring counts come from.
+// Verified 2026-07-25 against sindresorhus.
+var (
+	ProfileTabItem    = Sel{Attr: "data-tab-item"}
+	ProfileTabCounter = Sel{Class: "Counter"}
+)
+
+// ProfileAchievement is one achievement badge. The label lives in the img alt
+// as "Achievement: Pair Extraordinaire", and the slug lives in the href query,
+// so the slug is what gets recorded.
+// Verified 2026-07-25 against torvalds.
+var ProfileAchievement = Sel{Tag: "a", Attr: "href", AttrContains: "achievement="}
+
+// ProfilePinnedItem is one pinned repository. The repository link inside it is
+// the plain anchor whose href has two path segments.
+// Verified 2026-07-25 against sindresorhus.
+var ProfilePinnedItem = Sel{Tag: "li", Class: "js-pinned-item-list-item"}
+
+// --- organization pages, /{login} ---
+
+// The organization page is a different template from a user profile: no vcard,
+// no microformats, one pagehead block instead. These five are the whole of it.
+// Verified 2026-07-25 against golang.
+var (
+	OrgHead        = Sel{Tag: "header", Class: "orghead"}
+	OrgHeading     = Sel{Tag: "h1", Class: "h2"}
+	OrgAvatarImg   = Sel{Tag: "img", Attr: "itemprop", AttrValue: "image"}
+	OrgWebsite     = Sel{Tag: "a", Attr: "itemprop", AttrValue: "url"}
+	OrgFollowers  = Sel{Tag: "a", Attr: "href", AttrContains: "/followers"}
+	OrgMemberLink = Sel{Tag: "a", Class: "member-avatar"}
+	// The location and email rows have no class or itemprop of their own, so
+	// they are found by the icon inside them, the same trick the repository
+	// licence link needs.
+	OrgLocationRow = Sel{Tag: "li", HasDescendantClass: "octicon-location"}
+	OrgEmailRow    = Sel{Tag: "li", HasDescendantClass: "octicon-mail"}
 )
 
 // ProfilePinned is the pinned-repository list, and ProfileOrgAvatar is the

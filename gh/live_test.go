@@ -68,6 +68,109 @@ func TestLiveRepo(t *testing.T) {
 	t.Logf("%s", out)
 }
 
+// TestLiveAccount covers both profile templates. sindresorhus has every vcard
+// row a user profile can have except email, torvalds has achievements and no
+// bio, and golang is the organization template, so between the three every
+// branch of the decoder runs.
+func TestLiveAccount(t *testing.T) {
+	c := liveClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	t.Run("user", func(t *testing.T) {
+		a, err := c.Account(ctx, "sindresorhus")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Type != "User" {
+			t.Fatalf("type %q, the vcard template stopped matching", a.Type)
+		}
+		if a.Name == "" {
+			t.Error("name missing, p-name stopped matching")
+		}
+		if a.Bio == "" {
+			t.Error("bio missing, data-bio-text stopped matching")
+		}
+		if a.Website == "" {
+			t.Error("website missing, the itemprop=url row stopped matching")
+		}
+		if len(a.SocialLinks) == 0 {
+			t.Error("social links missing, the itemprop=social rows stopped matching")
+		}
+		if a.Followers == nil {
+			t.Error("followers missing, the tab=followers link stopped matching")
+		}
+		if a.RepoCount == nil {
+			t.Error("repo count missing, the tab counters stopped matching")
+		}
+		if a.DatabaseID == nil {
+			t.Error("database id missing, the avatar URL shape changed")
+		}
+		if len(a.PinnedRepos) == 0 {
+			t.Error("pinned repos missing")
+		}
+		if len(a.Organizations) == 0 {
+			t.Error("organizations missing, the hovercard-type hook changed")
+		}
+		logExtra(t, "user", a.Extra)
+	})
+
+	t.Run("user_achievements", func(t *testing.T) {
+		a, err := c.Account(ctx, "torvalds")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Company == "" {
+			t.Error("company missing, the worksFor row stopped matching")
+		}
+		if a.Location == "" {
+			t.Error("location missing, the homeLocation row stopped matching")
+		}
+		if len(a.Achievements) == 0 {
+			t.Error("achievements missing")
+		}
+		logExtra(t, "torvalds", a.Extra)
+	})
+
+	t.Run("org", func(t *testing.T) {
+		o, err := c.Org(ctx, "golang")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Type != "Organization" {
+			t.Fatalf("type %q, the orghead template stopped matching", o.Type)
+		}
+		if o.Name == "" {
+			t.Error("name missing, the orghead h1 stopped matching")
+		}
+		if o.Bio == "" {
+			t.Error("description missing, the muted sibling stopped matching")
+		}
+		if o.Website == "" {
+			t.Error("website missing, itemprop=url stopped matching")
+		}
+		if o.Followers == nil {
+			t.Error("followers missing, the /followers link stopped matching")
+		}
+		if len(o.Members) == 0 {
+			t.Error("members strip empty, member-avatar stopped matching")
+		}
+		// The organization counters are empty spans marked "Not available"
+		// without a session. If one ever arrives populated the tool should
+		// start reading it, so this asserts the absence rather than ignoring it.
+		if o.RepoCount != nil {
+			t.Errorf("repo count %d arrived on an org page, the counters are no longer session-gated", *o.RepoCount)
+		}
+		logExtra(t, "org", o.Extra)
+	})
+
+	t.Run("org_rejects_user", func(t *testing.T) {
+		if _, err := c.Org(ctx, "torvalds"); err == nil {
+			t.Error("Org accepted a user profile")
+		}
+	})
+}
+
 // TestLiveSearch walks every search type that works without a session. It is
 // one test rather than nine because the value is in the comparison: when one
 // type changes shape and the other eight do not, the failure says so.

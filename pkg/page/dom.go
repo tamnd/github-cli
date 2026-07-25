@@ -30,9 +30,9 @@ func (p *Page) Doc() *html.Node {
 // Sel is one selector. A zero field is "do not care", so a selector that only
 // sets Class matches on class alone.
 type Sel struct {
-	Tag        string
-	ID         string
-	Class      string // one class, matched against the whitespace-separated list
+	Tag          string
+	ID           string
+	Class        string // one class, matched against the whitespace-separated list
 	Attr         string // attribute that must be present
 	AttrValue    string // and, if set, must equal this
 	AttrPrefix   string
@@ -282,4 +282,18 @@ func appendUnique(ss []string, s string) []string {
 		}
 	}
 	return append(ss, s)
+}
+
+// OuterHTML re-renders a subtree. It is how a README makes it into a record
+// with its markup intact: the alternative is refetching the fragment, and the
+// fragment is already here.
+func OuterHTML(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	var b strings.Builder
+	if err := html.Render(&b, n); err != nil {
+		return ""
+	}
+	return b.String()
 }
