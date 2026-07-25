@@ -207,18 +207,23 @@ func (c *archiveCmd) run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 
-	w := io.Writer(os.Stdout)
 	if c.out != "" {
 		f, err := os.Create(c.out)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		w = f
+		// Closed by hand rather than deferred, and the error is returned. An
+		// archive is written to a file someone means to keep, and a close that
+		// fails is the one that flushes the last of it.
+		if _, err := io.Copy(f, body); err != nil {
+			_ = f.Close()
+			return err
+		}
+		return f.Close()
 	}
-	_, err = io.Copy(w, body)
+	_, err = io.Copy(os.Stdout, body)
 	return err
 }
 

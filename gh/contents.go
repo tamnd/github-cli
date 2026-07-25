@@ -478,7 +478,7 @@ func (c *Client) Download(ctx context.Context, repo, ref, path string, w io.Writ
 	if err != nil {
 		return 0, err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	return io.Copy(w, body)
 }
 

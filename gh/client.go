@@ -179,6 +179,13 @@ func (c *Client) GetJSON(ctx context.Context, rawURL string, s Surface, v any) (
 	if err != nil {
 		return nil, err
 	}
+	// 406 and 410 are routing answers, not failures, so the fetch let them
+	// through. For a caller that wanted JSON they are the end of the road, and
+	// saying which road is more use than the decoder's complaint about the
+	// HTML it was handed.
+	if resp.Status == http.StatusNotAcceptable || resp.Status == http.StatusGone {
+		return resp, noJSONHere(rawURL)
+	}
 	if v != nil {
 		if err := json.Unmarshal(resp.Body, v); err != nil {
 			return resp, errs.New(errs.KindNetwork, "cannot decode the json from %s: %v", shortURL(rawURL), err)
@@ -403,10 +410,14 @@ func (c *Client) Poll(ctx context.Context, rawURL string, s Surface) (*Response,
 // --- URL building ---
 
 // Page builds a github.com URL from path segments, escaping each one.
+//
+// It really does escape now. It used to copy the segments across untouched
+// while the comment said otherwise, which is the kind of helper that works
+// until the first branch with a space in its name.
 func Page(parts ...string) string {
 	esc := make([]string, 0, len(parts))
 	for _, p := range parts {
-		esc = append(esc, p)
+		esc = append(esc, url.PathEscape(p))
 	}
 	return BaseURL + "/" + strings.Join(esc, "/")
 }
