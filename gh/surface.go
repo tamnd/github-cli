@@ -175,10 +175,9 @@ func paginate[T any](ctx context.Context, limit int, fetch fetchPage[T], emit fu
 	}
 }
 
-// pageToken and cursorToken are the two token encodings. Keeping them as helper
-// functions rather than inline strconv calls means the "which page am I on"
-// logic reads the same in all nine listings that use it.
-
+// pageToken decodes the numbered-page token. Keeping it as a helper rather than
+// an inline strconv call means the "which page am I on" logic reads the same in
+// all nine listings that use it.
 func pageToken(token string) int {
 	if token == "" {
 		return 1
@@ -188,11 +187,4 @@ func pageToken(token string) int {
 		return 1
 	}
 	return n
-}
-
-func nextPageToken(current int, gotFull bool) string {
-	if !gotFull {
-		return ""
-	}
-	return strconv.Itoa(current + 1)
 }

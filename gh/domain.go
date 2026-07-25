@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"path/filepath"
-	"time"
 
 	"github.com/tamnd/any-cli/kit"
 )
@@ -137,7 +136,3 @@ func newClientFor(_ context.Context, cfg kit.Config) (any, error) {
 	c.HTTP = &http.Client{Timeout: conf.Timeout}
 	return c, nil
 }
-
-// timeoutFor is the per-command ceiling for the walks that can run long, used
-// by the byte-plane commands that do not get a kit-managed context.
-const timeoutFor = 10 * time.Minute

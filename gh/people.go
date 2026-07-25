@@ -712,7 +712,7 @@ func firstTime(ss ...string) *time.Time {
 
 // --- the rails pager ---
 
-// nextPageToken returns the page number to ask for next, or empty when the page
+// railsNext returns the page number to ask for next, or empty when the page
 // says there is no next.
 //
 // Two templates write the same link two ways: the organization roster marks it

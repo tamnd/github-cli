@@ -706,7 +706,6 @@ func (c *Client) Release(ctx context.Context, repo, tag string, opts ReleaseOpti
 		rel.setIdentity(KindRelease, repo+"@"+tag)
 	}
 	rel.addSource(res.FinalURL)
-	tag = rel.Tag
 	if !opts.Body {
 		rel.Body, rel.BodyHTML = "", ""
 	}
@@ -1114,7 +1113,7 @@ func isMailboxHeader(line string) bool {
 
 func isHex(s string) bool {
 	for _, r := range s {
-		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
 			return false
 		}
 	}

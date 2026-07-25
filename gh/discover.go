@@ -275,9 +275,7 @@ func (c *Client) TopicPage(ctx context.Context, slug string) (*Topic, error) {
 			t.StargazerCount = intp(n)
 		}
 	}
-	for _, rel := range relatedTopics(doc, slug) {
-		t.Related = append(t.Related, rel)
-	}
+	t.Related = append(t.Related, relatedTopics(doc, slug)...)
 	if t.DisplayName == "" && t.Description == "" {
 		return nil, structureChanged(slug)
 	}

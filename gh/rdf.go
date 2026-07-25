@@ -326,10 +326,10 @@ func slug(s string) string {
 	s = strings.TrimSpace(s)
 	var b strings.Builder
 	for _, r := range s {
-		switch {
-		case r == ' ' || r == '/' || r == '\\':
+		switch r {
+		case ' ', '/', '\\':
 			b.WriteByte('-')
-		case r == '<' || r == '>' || r == '"' || r == '{' || r == '}' || r == '|' || r == '^' || r == '`':
+		case '<', '>', '"', '{', '}', '|', '^', '`':
 			// Characters an IRI may not carry. Dropping them beats escaping
 			// them, because nobody wants gh:license/BSD%203-Clause.
 		default:
