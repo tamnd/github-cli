@@ -116,6 +116,13 @@ func HasClass(n *html.Node, want string) bool {
 func Find(root *html.Node, s Sel) *html.Node {
 	var found *html.Node
 	Walk(root, func(n *html.Node) bool {
+		// Walk keeps visiting siblings after a subtree says stop, so the
+		// answer has to be latched. Without this the last match wins instead
+		// of the first, which on a page where a dialog repeats the same shape
+		// as the content silently returns the dialog.
+		if found != nil {
+			return false
+		}
 		if s.Match(n) {
 			found = n
 			return false

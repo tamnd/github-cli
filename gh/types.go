@@ -415,8 +415,9 @@ type TimelineItem struct {
 type Commit struct {
 	Base
 
-	Repo string `json:"repo" table:"-"`
-	SHA  string `json:"sha"  table:"sha"`
+	Repo   string `json:"repo"              table:"-"`
+	SHA    string `json:"sha"               table:"sha"`
+	NodeID string `json:"node_id,omitempty" table:"-"`
 
 	Subject          string `json:"subject"                     table:"subject,truncate"`
 	SubjectHighlight string `json:"subject_highlight,omitempty" table:"-"`
@@ -551,13 +552,57 @@ type Release struct {
 
 // Asset is one release download.
 type Asset struct {
-	Name          string     `json:"name"                     table:"name"`
-	Size          *int64     `json:"size,omitempty"           table:"size"`
-	SizeDisplay   string     `json:"size_display,omitempty"   table:"-"`
-	DownloadCount *int       `json:"download_count,omitempty" table:"downloads"`
+	Name string `json:"name" table:"name"`
+	// Label is the text GitHub prints in place of the filename, "GitHub CLI
+	// 2.63.2 checksums" for gh_2.63.2_checksums.txt. It is set per asset at
+	// upload time and is usually the only human-readable thing in the row.
+	Label       string `json:"label,omitempty"        table:"-"`
+	Size        *int64 `json:"size,omitempty"         table:"-"`
+	SizeDisplay string `json:"size_display,omitempty" table:"size"`
+	// Digest is the sha256 the assets fragment publishes, prefixed "sha256:".
+	// It is new: GitHub added it around the time it stopped showing download
+	// counts to logged-out clients, so this record trades a popularity number
+	// for something you can actually verify a download against.
+	Digest string `json:"digest,omitempty" table:"-"`
+	// DownloadCount is left absent on a keyless read. The release page used to
+	// print it next to each asset and no longer does, and no other public
+	// surface carries it. The field stays because the shape of the record
+	// should not change when GitHub changes its mind again.
+	DownloadCount *int       `json:"download_count,omitempty" table:"-"`
 	URL           string     `json:"url"                      table:"url,url"`
 	UpdatedAt     *time.Time `json:"updated_at,omitempty"     table:"-"`
 	ContentType   string     `json:"content_type,omitempty"   table:"-"`
+}
+
+// Compare is a range between two commits: what `github compare` returns.
+//
+// It is built from the plain-text patch mailbox rather than the compare page.
+// The page is 227 KB of HTML with no JSON payload at all, and the .patch suffix
+// on the same range is a git-format-patch stream that carries every commit's
+// author, date, subject, and diff with no markup to guess at. Parsing a format
+// GitHub cannot restyle is the whole point.
+type Compare struct {
+	Base
+
+	Repo     string `json:"repo"      table:"-"`
+	BaseRef  string `json:"base_ref"  table:"base"`
+	HeadRef  string `json:"head_ref"  table:"head"`
+	PatchURL string `json:"patch_url" table:"-"`
+	DiffURL  string `json:"diff_url"  table:"-"`
+
+	Commits []Commit `json:"commits,omitempty" table:"-"`
+	// CommitCount is len(Commits) and is here so a table row says something
+	// useful without the caller reaching into the slice.
+	CommitCount int `json:"commit_count" table:"commits"`
+
+	Files     []FileChange `json:"files,omitempty" table:"-"`
+	FileCount int          `json:"file_count"      table:"files"`
+	Additions int          `json:"additions"       table:"+"`
+	Deletions int          `json:"deletions"       table:"-"`
+
+	// Patch is the raw stream, kept only when the caller asked for it. It is
+	// megabytes on a wide range.
+	Patch string `json:"patch,omitempty" table:"-"`
 }
 
 // --- the long tail ---

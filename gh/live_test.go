@@ -616,6 +616,398 @@ func TestLiveContents(t *testing.T) {
 	})
 }
 
+// TestLiveHistory covers the six surfaces the history layer reads. They are one
+// test because they are one question asked six ways, and when GitHub changes a
+// payload it is usually the disagreement between two of them that shows it.
+func TestLiveHistory(t *testing.T) {
+	c := liveClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	t.Run("commits", func(t *testing.T) {
+		var got []Commit
+		err := c.Commits(ctx, "cli/cli", CommitOptions{Limit: 40}, func(cm Commit) error {
+			got = append(got, cm)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A page is 35, so 40 proves the cursor came back and was accepted.
+		if len(got) != 40 {
+			t.Fatalf("walked %d commits, want the limit of 40", len(got))
+		}
+		cm := got[0]
+		if len(cm.SHA) != 40 {
+			t.Errorf("sha %q", cm.SHA)
+		}
+		if cm.Subject == "" {
+			t.Error("subject empty, shortMessage is often null and the markdown fallback did not run")
+		}
+		if cm.AuthoredAt == nil {
+			t.Error("no authored date")
+		}
+		if len(cm.Authors) == 0 {
+			t.Error("no authors")
+		}
+		if cm.DateGroup == "" {
+			t.Error("no day heading, commitGroups lost its title")
+		}
+		if cm.ID != "cli/cli@"+cm.SHA {
+			t.Errorf("id %q", cm.ID)
+		}
+		logExtra(t, "commit", cm.Extra)
+	})
+
+	t.Run("commits_filtered", func(t *testing.T) {
+		// The filters go to GitHub, so a path that exists and an author who
+		// touched it should come back non-empty and every record should be on
+		// that path.
+		n := 0
+		err := c.Commits(ctx, "cli/cli", CommitOptions{Path: "go.mod", Limit: 5}, func(Commit) error {
+			n++
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatal("no commits touched go.mod, the path filter is being dropped")
+		}
+	})
+
+	t.Run("commit", func(t *testing.T) {
+		cm, err := c.CommitInfo(ctx, "cli/cli", "trunk", CommitInfoOptions{Files: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cm.SHA) != 40 {
+			t.Errorf("a branch name did not resolve to a sha: %q", cm.SHA)
+		}
+		if cm.Additions == nil || cm.Deletions == nil {
+			t.Error("headerInfo did not decode")
+		}
+		if len(cm.Files) == 0 {
+			t.Fatal("no files, diffEntryData did not decode")
+		}
+		f := cm.Files[0]
+		if f.Path == "" || f.Status == "" {
+			t.Errorf("half a file change: %+v", f)
+		}
+		if len(cm.Parents) == 0 {
+			t.Error("no parents on a commit that is not the root")
+		}
+		logExtra(t, "commit info", cm.Extra)
+	})
+
+	t.Run("verify", func(t *testing.T) {
+		// GitHub signs every commit it makes itself, so a merge on cli/cli is
+		// the reliable case. This is the only surface that says so.
+		var head []*Commit
+		err := c.Commits(ctx, "cli/cli", CommitOptions{Limit: 5}, func(cm Commit) error {
+			head = append(head, &cm)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.VerifyCommits(ctx, "cli/cli", head); err != nil {
+			t.Fatal(err)
+		}
+		signed := 0
+		for _, cm := range head {
+			if cm.Verification != "" {
+				signed++
+			}
+		}
+		if signed == 0 {
+			t.Error("commit search reported verification on none of five commits")
+		}
+	})
+
+	t.Run("branches", func(t *testing.T) {
+		var got []GitRef
+		err := c.Branches(ctx, "cli/cli", RefOptions{Limit: 10}, func(r GitRef) error {
+			got = append(got, r)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) == 0 {
+			t.Fatal("no branches")
+		}
+		// The page carries what the protocol cannot: who last pushed and when.
+		hasAuthor := false
+		for _, r := range got {
+			if r.Type != "branch" {
+				t.Errorf("type %q on a branch", r.Type)
+			}
+			if r.Author != nil && r.AuthoredAt != nil {
+				hasAuthor = true
+			}
+		}
+		if !hasAuthor {
+			t.Error("no branch carried an author, which is the only reason to read the page")
+		}
+		if got[0].Repo != "cli/cli" {
+			t.Errorf("repo %q", got[0].Repo)
+		}
+	})
+
+	t.Run("branches_complete", func(t *testing.T) {
+		// The advertisement has no cap, so it should beat the page's list and
+		// every entry should carry a SHA.
+		var got []GitRef
+		err := c.Branches(ctx, "cli/cli", RefOptions{Complete: true}, func(r GitRef) error {
+			got = append(got, r)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) < 5 {
+			t.Fatalf("the advertisement gave %d branches", len(got))
+		}
+		def := 0
+		for _, r := range got {
+			if len(r.SHA) != 40 {
+				t.Errorf("%s has sha %q", r.Name, r.SHA)
+			}
+			if r.IsDefault {
+				def++
+			}
+		}
+		if def != 1 {
+			t.Errorf("%d branches claim to be the default", def)
+		}
+	})
+
+	t.Run("tags", func(t *testing.T) {
+		var got []GitRef
+		err := c.Tags(ctx, "cli/cli", RefOptions{Limit: 50}, func(r GitRef) error {
+			got = append(got, r)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The point of reading the protocol by default is that neither the feed
+		// nor the page gives more than ten.
+		if len(got) != 50 {
+			t.Fatalf("%d tags, want 50 from a repository with hundreds", len(got))
+		}
+		annotated := 0
+		for _, r := range got {
+			if r.Type != "tag" {
+				t.Errorf("type %q on a tag", r.Type)
+			}
+			if r.PeeledSHA != "" {
+				annotated++
+			}
+		}
+		t.Logf("%d of %d tags are annotated", annotated, len(got))
+	})
+
+	t.Run("refs", func(t *testing.T) {
+		// No limit: it is one response either way, and a limit here truncates
+		// inside the branch list and never reaches the tags.
+		heads, tags := 0, 0
+		err := c.Refs(ctx, "cli/cli", RefOptions{}, func(r GitRef) error {
+			switch r.Type {
+			case "branch":
+				heads++
+			case "tag":
+				tags++
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if heads == 0 || tags == 0 {
+			t.Errorf("refs gave %d branches and %d tags, it should give both", heads, tags)
+		}
+	})
+
+	t.Run("default_branch", func(t *testing.T) {
+		// symref=HEAD comes free with the advertisement and should agree with
+		// the repository page, which reads it from a completely different place.
+		name, err := c.DefaultBranch(ctx, "cli/cli")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name != "trunk" {
+			t.Errorf("default branch %q, want trunk", name)
+		}
+	})
+
+	t.Run("releases", func(t *testing.T) {
+		var got []Release
+		err := c.Releases(ctx, "cli/cli", ReleaseOptions{Limit: 15, Body: true}, func(r Release) error {
+			got = append(got, r)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Ten a page, so fifteen proves rel="next" was found and followed.
+		if len(got) != 15 {
+			t.Fatalf("%d releases, want the limit of 15", len(got))
+		}
+		latest := 0
+		for _, r := range got {
+			if r.Tag == "" {
+				t.Errorf("release with no tag: %+v", r.Base)
+			}
+			if r.IsLatest {
+				latest++
+			}
+		}
+		if latest != 1 {
+			t.Errorf("%d releases are labelled Latest", latest)
+		}
+		if got[0].PublishedAt == nil {
+			t.Error("no publish date on the newest release")
+		}
+		if got[0].Body == "" {
+			t.Error("no release notes with Body set")
+		}
+		logExtra(t, "release", got[0].Extra)
+	})
+
+	t.Run("release_assets", func(t *testing.T) {
+		rel, err := c.Release(ctx, "cli/cli", "v2.63.2", ReleaseOptions{Assets: true, Body: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rel.Tag != "v2.63.2" {
+			t.Errorf("tag %q", rel.Tag)
+		}
+		if rel.Title == "" {
+			t.Error("no title")
+		}
+		if rel.Author == nil {
+			t.Error("no publisher, the byline link did not match")
+		}
+		if rel.PublishedAt == nil {
+			t.Error("no publish date")
+		}
+		if rel.Body == "" {
+			t.Error("no release notes")
+		}
+		// The commit the tag points at is the one thing the per-tag page has
+		// that a list entry does not.
+		if len(rel.CommitSHA) != 40 {
+			t.Errorf("commit sha %q", rel.CommitSHA)
+		}
+		if len(rel.Assets) < 5 {
+			t.Fatalf("%d assets, the expanded_assets fragment did not decode", len(rel.Assets))
+		}
+		a := rel.Assets[0]
+		if a.Name == "" || a.URL == "" {
+			t.Errorf("half an asset: %+v", a)
+		}
+		if a.SizeDisplay == "" {
+			t.Error("no size on an asset")
+		}
+		if a.Label == "" {
+			t.Error("no label, the row's first truncated span stopped matching")
+		}
+		if a.UpdatedAt == nil {
+			t.Error("no upload time on an asset")
+		}
+		// Download counts are gone for a logged-out client. If they ever come
+		// back this logs it rather than failing.
+		if a.DownloadCount != nil {
+			t.Logf("download counts are being served again: %d", *a.DownloadCount)
+		}
+	})
+
+	t.Run("release_latest", func(t *testing.T) {
+		// "latest" is a redirect, so this proves the decoder reads whatever it
+		// lands on rather than the tag it was handed. It is also the release
+		// that carries digests: GitHub started attaching them recently and old
+		// releases do not have them.
+		rel, err := c.Release(ctx, "cli/cli", "latest", ReleaseOptions{Assets: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(rel.Tag, "v") {
+			t.Errorf("tag %q, the redirect target did not decode", rel.Tag)
+		}
+		if !rel.IsLatest {
+			t.Error("the latest release is not labelled Latest")
+		}
+		if len(rel.Assets) == 0 {
+			t.Fatal("no assets on the latest release")
+		}
+		digests := 0
+		for _, a := range rel.Assets {
+			if strings.HasPrefix(a.Digest, "sha256:") {
+				digests++
+			}
+		}
+		if digests == 0 {
+			t.Error("no sha256 digests, which is the one thing that replaced download counts")
+		}
+	})
+
+	t.Run("compare", func(t *testing.T) {
+		cmp, err := c.CompareRefs(ctx, "cli/cli", "v2.63.1", "v2.63.2", CompareOptions{Files: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmp.CommitCount == 0 {
+			t.Fatal("no commits in the range, the mailbox did not split")
+		}
+		if cmp.FileCount == 0 {
+			t.Fatal("no files in the range")
+		}
+		if cmp.Additions == 0 && cmp.Deletions == 0 {
+			t.Error("a release range with no line changes")
+		}
+		first := cmp.Commits[0]
+		if len(first.SHA) != 40 || first.Subject == "" || first.AuthoredAt == nil {
+			t.Errorf("half a commit from the patch: %+v", first.Base)
+		}
+		// The mailbox has names and emails, not logins, except where the email
+		// is a noreply address. At least one of these should be.
+		logins := 0
+		for _, cm := range cmp.Commits {
+			for _, a := range cm.Authors {
+				if a.Login != "" {
+					logins++
+				}
+			}
+		}
+		t.Logf("%d of %d commits gave a login through a noreply address", logins, cmp.CommitCount)
+		if cmp.ID != "cli/cli@v2.63.1...v2.63.2" {
+			t.Errorf("id %q", cmp.ID)
+		}
+	})
+
+	t.Run("diff", func(t *testing.T) {
+		// The diff is the patch without the mail headers, so it should be
+		// smaller and it should not carry a From line.
+		url := BaseURL + "/cli/cli/compare/v2.63.1...v2.63.2"
+		diff, err := c.Diff(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(diff, "diff --git ") {
+			t.Errorf("a diff should start with a diff header: %.60q", diff)
+		}
+		patch, err := c.Patch(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(patch) <= len(diff) {
+			t.Errorf("patch %d bytes is not bigger than diff %d bytes", len(patch), len(diff))
+		}
+	})
+}
+
 // TestLiveCodeSearchStaysRefused guards the one search type that answers 200
 // with nothing. If GitHub ever opens it up this test fails, which is the
 // notification to go implement it.
