@@ -1,6 +1,6 @@
-title       = "ghb"
+title       = "github"
 baseURL     = "https://github-cli.tamnd.com/"
-description = "Browse GitHub repositories, users and releases"
+description = "A command line for GitHub, with no API token."
 contentDir  = "content"
 outputDir   = "public"
 theme       = "tago-doks"

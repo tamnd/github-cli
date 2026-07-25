@@ -4,60 +4,111 @@ description: "The output contract every command shares: formats, fields, and tem
 weight: 30
 ---
 
-Every list command in the fleet renders through one formatter, so the same flags
-work everywhere. Wire your commands through it as you add them, and this page
-describes what users get. Pick a format with `-o`, or let ghb choose:
-a table when writing to a terminal, JSONL when piped.
-
-## Formats
+Every command renders through one formatter, so the same flags work everywhere.
+The default is `auto`: a table when the output is a terminal, JSONL when it is a pipe or a file.
+That is why the same command reads well by hand and parses cleanly in a script.
 
 ```bash
-ghb <command> -o table   # aligned columns for reading
-ghb <command> -o jsonl   # one JSON object per line, for piping
-ghb <command> -o json    # a single JSON array
-ghb <command> -o csv     # spreadsheet friendly
-ghb <command> -o tsv     # tab-separated
-ghb <command> -o url     # just the URL column
-ghb <command> -o raw     # the underlying bytes, unformatted
+github tags golang/go -n 3            # a table, because this is a terminal
+github tags golang/go -n 3 | wc -l    # JSONL, because this is a pipe
 ```
+
+## Formats
 
 | Format | Best for |
 |---|---|
 | `table` | Reading on a terminal |
 | `jsonl` | Piping into another tool, one object at a time |
-| `json` | Loading a whole result as an array |
-| `csv` / `tsv` | Spreadsheets and quick column math |
-| `url` | Feeding URLs into other commands |
-| `raw` | The unformatted bytes (response bodies, file contents) |
+| `json` | Loading a whole result as one array |
+| `markdown` | Pasting into an issue or a document |
+| `list` | One record per block, when a record is too wide for a row |
+| `csv` / `tsv` | Spreadsheets and quick column maths |
+| `url` | Feeding addresses into another command |
+| `raw` | The record as it came, one compact JSON object per line |
+
+```bash
+github tags golang/go -n 3 -o json
+github tags golang/go -n 3 -o csv
+github repos hugo -n 3 -o url
+```
+
+`-o url` is the one worth knowing about, because it turns any listing into input for the next command:
+
+```console
+$ github repos hugo -n 3 -o url
+https://github.com/gohugoio/hugo
+https://github.com/JakeWharton/hugo
+https://github.com/gohugoio/hugoDocs
+```
+
+The URL is not a table column, so it never takes up room on screen, and `-o url` still finds it.
+
+## What is in a record
+
+Every record carries the same five identity fields before its own:
+
+| Field | What it is |
+|---|---|
+| `kind` | What sort of thing this is |
+| `id` | The canonical id for that kind |
+| `uri` | The `github://` address |
+| `url` | The live github.com address, where the thing has one |
+| `sources` | Every URL that was read to build it |
+
+`sources` is there so you never have to guess where a field came from:
+
+```console
+$ github tags golang/go -n 1 -o json | jq -r '.[0].sources[]'
+https://github.com/golang/go.git/info/refs?service=git-upload-pack
+```
+
+Two more appear when they apply.
+`via` names which extraction tier produced each field, and `extra` holds anything GitHub sent that no field claims.
+A non-empty `extra` is a bug report: it means the site added something and this tool has not modelled it yet.
 
 ## Narrowing columns
 
-Keep only the fields you want:
-
 ```bash
-ghb <command> --fields id,title,url
+github tags golang/go --fields name,sha
 ```
 
-`--no-header` drops the header row in `table` and `csv` output, which helps when
-a downstream tool expects bare rows.
+`--fields` works on every format, and it can call back a field the table hides, since a hidden field keeps its name.
+
+`--no-header` drops the header row from `table`, `csv`, and `tsv`, which is what a downstream tool usually wants.
 
 ## Templating rows
 
-For full control over each line, apply a Go text/template. Fields are the JSON
-keys, capitalised:
+For full control over each line, apply a Go text/template.
+The keys are the JSON keys, spelled exactly as they appear in the JSON:
 
-```bash
-ghb <command> --template '{{.URL}} {{.Title}}'
+```console
+$ github tags golang/go -n 2 --template '{{.name}} {{.sha}}'
+go1 6174b5e21e73714c63061e66efdbe180e1c5491d
+go1.0.1 2fffba7fe19690e038314d17a117d6b87979c89f
 ```
 
-## Why auto-detection helps
+Lower case, and underscored where the JSON is underscored: `{{.is_default}}`, not `{{.IsDefault}}`.
 
-Because the default adapts to the destination, the same command reads well by
-hand and parses cleanly in a pipe:
+## Limiting and streaming
+
+Records stream as they are produced, so `-n` stops the work rather than trimming the output:
 
 ```bash
-ghb <command>            # a table, because this is a terminal
-ghb <command> | wc -l    # JSONL, because this is a pipe
+github commits golang/go -n 20
 ```
 
-You only reach for `-o` when you want something other than that default.
+On a walk that would otherwise page through years of history, that is the difference between one request and hundreds.
+
+## Writing to a store
+
+`--db` tees every record into a database as it streams, without changing what is printed:
+
+```bash
+github crawl gohugoio/hugo --depth 2 --db hugo.db
+github crawl gohugoio/hugo --depth 2 --db 'postgres://localhost/graph'
+```
+
+## Bytes, not records
+
+`cat`, `readme`, `diff`, and `archive` write bytes rather than records, so the format flags do not apply to them.
+`cat` and `archive` stream straight through, which is why a large file costs no memory.

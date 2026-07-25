@@ -1,6 +1,6 @@
 ---
 title: "Search"
-description: "Search the ghb documentation."
+description: "Search the github documentation."
 layout: "search"
 weight: 90
 ExcludeSearch: true

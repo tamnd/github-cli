@@ -1,13 +1,10 @@
-// Package cli builds the ghb command tree on top of the github library.
+// Package cli assembles the github command tree from the gh domain on top of
+// the any-cli/kit framework.
 package cli
 
 import (
-	"fmt"
-	"os"
-
-	"github.com/mattn/go-isatty"
-	"github.com/spf13/cobra"
-	"github.com/tamnd/github-cli/github"
+	"github.com/tamnd/any-cli/kit"
+	"github.com/tamnd/github-cli/gh"
 )
 
 // Build metadata, set via -ldflags at release time.
@@ -17,139 +14,32 @@ var (
 	Date    = "unknown"
 )
 
-// exit codes.
-const (
-	exitError  = 1
-	exitUsage  = 2
-	exitNoData = 3
-)
+// NewApp assembles the kit application from the gh domain. The domain's
+// Register installs the client factory and every operation, so the binary and a
+// multi-domain host (ant, which blank-imports the package) share one source of
+// truth. kit.Run turns the App into the CLI, plus the serve and mcp surfaces and
+// the typed-error-to-exit-code mapping.
+//
+// To add a command, declare it in gh/ops.go with kit.Handle and it appears here
+// automatically. Reach for app.AddCommand only for a verb that does not fit the
+// emit-records shape, the way the byte-plane commands below do not.
+func NewApp() *kit.App {
+	id := gh.Domain{}.Info().Identity
+	id.Version = Version
 
-// ExitError carries a process exit code up to main.
-type ExitError struct {
-	Code int
-	Err  error
-}
+	// WithDefaults is how the site's own baseline reaches the resolved config.
+	// Without it the run would use the framework's numbers, which are tuned for
+	// an API with a published rate limit rather than for a CDN.
+	app := kit.New(id, kit.WithDefaults(gh.DomainDefaults))
+	(gh.Domain{}).Register(app)
 
-func (e *ExitError) Error() string {
-	if e.Err != nil {
-		return e.Err.Error()
-	}
-	return fmt.Sprintf("exit %d", e.Code)
-}
-
-func (e *ExitError) Unwrap() error { return e.Err }
-
-func codeError(code int, err error) error { return &ExitError{Code: code, Err: err} }
-
-// App holds shared state threaded through every command.
-type App struct {
-	client *github.Client
-	cfg    github.Config
-
-	output   string
-	fields   []string
-	noHeader bool
-	template string
-	limit    int
-	quiet    bool
-}
-
-// Root builds the root command and its subtree.
-func Root() *cobra.Command {
-	app := &App{cfg: github.DefaultConfig()}
-
-	root := &cobra.Command{
-		Use:   "ghb",
-		Short: "Browse GitHub repositories, users and releases",
-		Long: `ghb reads public GitHub data through the GitHub REST API v3.
-No authentication is required. Returns records as table, JSON, JSONL,
-CSV, TSV, or URLs.
-
-ghb is an independent tool and is not affiliated with GitHub or Microsoft.`,
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			return app.setup()
-		},
-	}
-
-	pf := root.PersistentFlags()
-	pf.StringVarP(&app.output, "output", "o", "auto", "output: table|json|jsonl|csv|tsv|url|raw (auto=table on TTY, jsonl piped)")
-	pf.StringSliceVar(&app.fields, "fields", nil, "comma-separated columns to include")
-	pf.BoolVar(&app.noHeader, "no-header", false, "omit the header row in table/csv/tsv")
-	pf.StringVar(&app.template, "template", "", "Go text/template applied per record")
-	pf.IntVarP(&app.limit, "limit", "n", 0, "limit number of records (0 = command default)")
-	pf.BoolVarP(&app.quiet, "quiet", "q", false, "suppress progress on stderr")
-
-	pf.DurationVar(&app.cfg.Rate, "delay", app.cfg.Rate, "minimum spacing between requests")
-	pf.DurationVar(&app.cfg.Timeout, "timeout", app.cfg.Timeout, "per-request timeout")
-	pf.IntVar(&app.cfg.Retries, "retries", app.cfg.Retries, "retry attempts on 429/5xx")
-	pf.StringVar(&app.cfg.UserAgent, "user-agent", app.cfg.UserAgent, "User-Agent sent with each request")
-
-	root.AddCommand(
-		app.searchCmd(),
-		app.repoCmd(),
-		app.trendingCmd(),
-		app.userCmd(),
-		app.releasesCmd(),
-		newVersionCmd(),
-	)
-	return root
-}
-
-func (a *App) setup() error {
-	if a.output == "" || a.output == "auto" {
-		if isatty.IsTerminal(os.Stdout.Fd()) {
-			a.output = string(FormatTable)
-		} else {
-			a.output = string(FormatJSONL)
-		}
-	}
-	if !Format(a.output).Valid() {
-		return codeError(exitUsage, fmt.Errorf("unknown output format %q", a.output))
-	}
-	a.client = github.NewClient(a.cfg)
-	return nil
-}
-
-func (a *App) render(records any) error {
-	r := NewRenderer(os.Stdout, Format(a.output), a.fields, a.noHeader, a.template)
-	return r.Render(records)
-}
-
-func (a *App) renderOrEmpty(records any, n int) error {
-	if err := a.render(records); err != nil {
-		return err
-	}
-	if n == 0 {
-		return codeError(exitNoData, nil)
-	}
-	return nil
-}
-
-func (a *App) progressf(format string, args ...any) {
-	if a.quiet {
-		return
-	}
-	_, _ = fmt.Fprintf(os.Stderr, format+"\n", args...)
-}
-
-func mapFetchErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	if isNotFound(err) {
-		return codeError(exitNoData, err)
-	}
-	if isRateLimit(err) {
-		return codeError(exitError, err)
-	}
-	return codeError(exitError, err)
-}
-
-func (a *App) effectiveLimit(def int) int {
-	if a.limit > 0 {
-		return a.limit
-	}
-	return def
+	app.AddCommand(newVersionCmd())
+	app.AddCommand(newCatCmd())
+	app.AddCommand(newReadmeCmd())
+	app.AddCommand(newArchiveCmd())
+	app.AddCommand(newDiffCmd())
+	app.AddCommand(newPageCmd())
+	app.AddCommand(newRDFCmd())
+	app.AddCommand(newExportCmd())
+	return app
 }
