@@ -1,0 +1,172 @@
+package page
+
+// selectors.go is every CSS-shaped selector this tool uses, in one file, each
+// with the page it came from and the date it was last checked against a live
+// fetch. A selector change is then a one-file diff instead of an archaeology
+// project across a dozen decoders.
+//
+// The order of preference for reading a field is: JSON payload, JSON-LD,
+// microdata, microformats, stable data attributes, class selectors, text.
+// Everything in this file is in the bottom three tiers by definition, so
+// everything in this file is the fallback for something.
+//
+// Every one of these degrades to a missing field, never to a wrong one. A
+// selector that stops matching produces an absent value, and absent is a
+// truthful answer.
+
+// --- repository page, /{owner}/{repo} ---
+
+// LicenseLink is the About-sidebar licence link. There is no licence field in
+// any JSON payload on any keyless surface, so this anchor is the only source.
+// It is the most fragile selector in the tool: it is identified by the
+// octicon-law SVG inside it rather than by a class on the anchor, because the
+// anchor's classes change more often than the icon does.
+// Verified 2026-07-25 against gohugoio/hugo.
+var LicenseLink = Sel{Tag: "a", HasDescendantClass: "octicon-law"}
+
+// LanguageBarItem is one segment of the coloured language bar under the About
+// box. Used only when sections.languages arrives empty, which is the common
+// case on a cold page.
+// Verified 2026-07-25 against gohugoio/hugo.
+var LanguageBarItem = Sel{Tag: "a", Attr: "href", AttrContains: "/search?l="}
+
+// LanguageBarName is the bold span holding just the language name, so the
+// percentage that follows it in the anchor text can be told apart from it
+// without splitting on whitespace and hoping.
+// Verified 2026-07-25 against gohugoio/hugo.
+var LanguageBarName = Sel{Tag: "span", Class: "text-bold"}
+
+// --- profile pages, /{login} ---
+
+// ProfileBio is the bio, which is carried in a data attribute as well as in
+// the element text. The attribute is the one to read: it is the source form,
+// before GitHub's own link and emoji rewriting.
+// Verified 2026-07-25 against torvalds.
+var ProfileBio = Sel{Class: "user-profile-bio", Attr: "data-bio-text"}
+
+// ProfileNames anchors the display-name block when the microdata hooks change.
+// The container carries js-profile-editable-names, which was confirmed present.
+// Verified 2026-07-25 against torvalds.
+var ProfileNames = Sel{Class: "vcard-names-container"}
+
+// ProfileFullName and ProfileNickname are the microformat pair. They carry the
+// same two fields as the microdata independently, which is why both are read:
+// a disagreement between them is recorded as a conflict rather than resolved,
+// because it would mean the page changed under us.
+// Verified 2026-07-25 against torvalds.
+var (
+	ProfileFullName = Sel{Class: "p-nickname"}
+	ProfileVCardOrg = Sel{Class: "p-org"}
+)
+
+// ProfileTabCount matches the tab links that carry the follower, following,
+// and star counts. The count is in a bold span inside the anchor and is a
+// compact string like "313k", which is what ParseCompactCount is for.
+// Verified 2026-07-25 against torvalds.
+var (
+	ProfileFollowers = Sel{Tag: "a", Attr: "href", AttrSuffix: "?tab=followers"}
+	ProfileFollowing = Sel{Tag: "a", Attr: "href", AttrSuffix: "?tab=following"}
+	ProfileStars     = Sel{Tag: "a", Attr: "href", AttrSuffix: "?tab=stars"}
+)
+
+// ProfilePinned is the pinned-repository list, and ProfileOrgAvatar is the
+// organization strip. The hovercard type attribute is the reliable hook on
+// both: it is what the front end uses to decide which popover to fetch, so it
+// is load-bearing for GitHub too and does not drift casually.
+// Verified 2026-07-25 against torvalds.
+var (
+	ProfilePinnedList = Sel{Tag: "ol", Class: "js-pinned-items-reorder-list"}
+	ProfileOrgAvatar  = Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "organization"}
+	ProfileUserLink   = Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "user"}
+	ProfileReadme     = Sel{Class: "js-profile-readme"}
+	ProfileVCardList  = Sel{Class: "vcard-details"}
+	ProfileAchieve    = Sel{Class: "js-profile-achievements"}
+)
+
+// --- repositories tab, /{login}?tab=repositories ---
+
+// RepoListItem is one row. The anchor inside carries
+// itemprop="name codeRepository", which is the microdata hook and the reason
+// this parser is anchored on meaning rather than on layout.
+// Verified 2026-07-25 against torvalds?tab=repositories, 12 rows.
+var (
+	RepoListItem  = Sel{Tag: "li", Attr: "itemprop", AttrValue: "owns"}
+	RepoNameLink  = Sel{Tag: "a", Attr: "itemprop", AttrValue: "name codeRepository"}
+	RepoListDesc  = Sel{Attr: "itemprop", AttrValue: "description"}
+	RepoListLang  = Sel{Attr: "itemprop", AttrValue: "programmingLanguage"}
+	RepoLangColor = Sel{Class: "repo-language-color"}
+	RepoStarsLink = Sel{Tag: "a", Attr: "href", AttrSuffix: "/stargazers"}
+	RepoForksLink = Sel{Tag: "a", Attr: "href", AttrSuffix: "/forks"}
+	RepoTopicTag  = Sel{Tag: "a", Class: "topic-tag"}
+	RepoLabel     = Sel{Class: "Label"}
+)
+
+// --- trending, /trending ---
+
+// TrendingRow is one repository card. The page is Rails and is the only source
+// anywhere for the trending list: there is no JSON equivalent, tokened or not.
+// Verified 2026-07-25 against /trending.
+var (
+	TrendingRow      = Sel{Tag: "article", Class: "Box-row"}
+	TrendingHeading  = Sel{Tag: "h2"}
+	TrendingDesc     = Sel{Tag: "p"}
+	TrendingPeriod   = Sel{Class: "float-sm-right"}
+	TrendingBuiltBy  = Sel{Tag: "img", Class: "avatar-user"}
+	TrendingDevRow   = Sel{Class: "Box-row"}
+	TrendingDevName  = Sel{Tag: "h1", Class: "h3"}
+	TrendingDevRepo  = Sel{Tag: "h1", Class: "h4"}
+	TrendingSponsors = Sel{Tag: "a", Attr: "href", AttrPrefix: "/sponsors/"}
+)
+
+// --- topic page, /topics/{slug} ---
+
+// The topic page carries metadata the search result does not: the long
+// description, the logo, the creator, the release date, the Wikipedia link,
+// and the aliases.
+// Verified 2026-07-25 against /topics/go.
+var (
+	TopicHeading   = Sel{Tag: "h1"}
+	TopicShortDesc = Sel{Tag: "p", Class: "f4"}
+	TopicMarkdown  = Sel{Class: "markdown-body"}
+	TopicLogo      = Sel{Tag: "img", Class: "rounded-2"}
+	TopicWikipedia = Sel{Tag: "a", Attr: "href", AttrPrefix: "https://en.wikipedia.org"}
+	TopicRepoRow   = Sel{Tag: "article", Class: "border"}
+)
+
+// --- releases, /{owner}/{repo}/releases/tag/{tag} ---
+
+// The release list page is lazy: a cold fetch of /releases carries no
+// /releases/tag/ links at all, which is why the list comes from releases.atom
+// and only the per-release page is parsed here. Download counts exist nowhere
+// else on a keyless surface, which is what makes the extra request worth it.
+// Verified 2026-07-25 against gohugoio/hugo.
+var (
+	ReleaseBox       = Sel{Class: "Box"}
+	ReleaseMarkdown  = Sel{Class: "markdown-body"}
+	ReleaseAssetRow  = Sel{Class: "Box-row"}
+	ReleaseTagIcon   = Sel{Class: "octicon-tag"}
+	ReleaseLabel     = Sel{Class: "Label"}
+	ReleaseAssetLink = Sel{Tag: "a", Attr: "href", AttrPrefix: "/"}
+)
+
+// --- gist, gist.github.com/{id} ---
+
+// Verified 2026-07-25 against gist.github.com.
+var (
+	GistFileBox    = Sel{Class: "file"}
+	GistFileHeader = Sel{Class: "file-header", Attr: "data-path"}
+	GistBlobWrap   = Sel{Class: "blob-wrapper"}
+)
+
+// --- shared ---
+
+// BoxRow is the generic Rails list row. It appears on the org people page, the
+// tags page, the release assets list, and half a dozen others, which is why it
+// is here once rather than in six decoders.
+// Verified 2026-07-25.
+var (
+	BoxRow       = Sel{Class: "Box-row"}
+	MarkdownBody = Sel{Class: "markdown-body"}
+	Pagination   = Sel{Class: "pagination"}
+	NextPage     = Sel{Tag: "a", Attr: "rel", AttrValue: "next"}
+)
