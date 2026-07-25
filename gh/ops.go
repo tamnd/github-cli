@@ -25,6 +25,7 @@ func registerOps(app *kit.App) {
 	registerHistoryOps(app)
 	registerPeopleOps(app)
 	registerDiscoverOps(app)
+	registerGraphOps(app)
 	registerMetaOps(app)
 }
 
@@ -553,6 +554,10 @@ func (c *Client) fetchOne(ctx context.Context, kind, id string) (any, error) {
 			return nil, errs.Usage("%q is not a file id", id)
 		}
 		return c.Blob(ctx, repo, path, BlobOptions{Ref: ref})
+	case KindTopic:
+		return c.TopicPage(ctx, id)
+	case KindGist:
+		return c.Gist(ctx, id, false)
 	}
 	return nil, errs.Unsupported("reading a %s is not implemented yet", kind)
 }
@@ -1368,6 +1373,195 @@ func getStats(ctx context.Context, in repoRefIn, emit func(*RepoStats) error) er
 }
 
 // --- meta ---
+
+// --- the graph plane ---
+
+func registerGraphOps(app *kit.App) {
+	kit.Handle(app, kit.OpMeta{
+		Name: "graph", Group: "graph",
+		Summary: "Emit the node, edges, and facts for one entity",
+		Args:    []kit.Arg{{Name: "ref", Help: "any github reference"}},
+	}, graph)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "edges", Group: "graph", List: true,
+		Summary: "Emit only the edges for one entity",
+		Long: "Every edge carries the rule that produced it. --min-trust id is the\n" +
+			"interesting case: the edges derived from the id alone need no request at\n" +
+			"all, so `github edges golang/go#1 --min-trust id` answers offline.",
+		Args: []kit.Arg{{Name: "ref", Help: "any github reference"}},
+	}, edges)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "crawl", Group: "graph",
+		Summary: "Walk the graph breadth-first from a seed",
+		Long: "crawl follows only the predicates named by --follow, which defaults to the\n" +
+			"structural ones: references, stars, follows, and the two dependency\n" +
+			"predicates fan out without bound and have to be asked for by name. Nodes\n" +
+			"and edges stream as they are found, so an interrupted walk has still\n" +
+			"emitted everything it reached.",
+		Args: []kit.Arg{{Name: "ref", Help: "seed reference"}},
+	}, crawl)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "deps", Group: "graph", URIType: KindRepo, List: true,
+		Summary: "List what a repository depends on",
+		Long: "The dependency graph is opt-in per repository. A repository with it off\n" +
+			"answers with a page and no rows, which comes back as an empty list rather\n" +
+			"than an error, because the page does not say which of the two it is.",
+		Args: []kit.Arg{{Name: "ref", Help: "owner/name, or any URL from the repository"}},
+	}, listDeps)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "dependents", Group: "graph", URIType: KindRepo, List: true,
+		Summary: "List the repositories that depend on this one",
+		Long: "The list is ordered by stars and it is long, so --limit is the flag that\n" +
+			"matters: a popular library has tens of thousands of rows at thirty a page.",
+		Args: []kit.Arg{{Name: "ref", Help: "owner/name, or any URL from the repository"}},
+	}, listDependents)
+}
+
+func graph(ctx context.Context, in bareRefIn, emit func(any) error) error {
+	_, _, g, err := in.C.GraphOfRef(ctx, in.Ref)
+	if err != nil {
+		return err
+	}
+	for i := range g.Nodes {
+		if err := emit(&g.Nodes[i]); err != nil {
+			return err
+		}
+	}
+	for i := range g.Edges {
+		if err := emit(&g.Edges[i]); err != nil {
+			return err
+		}
+	}
+	for i := range g.Facts {
+		if err := emit(&g.Facts[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type edgesIn struct {
+	C         *Client `kit:"inject"`
+	Ref       string  `kit:"arg" help:"any github reference"`
+	Predicate string  `kit:"flag" help:"keep only this predicate"`
+	MinTrust  string  `kit:"flag,name=min-trust" help:"drop edges below this rule: id, payload, feed, html, text" default:"html"`
+}
+
+func edges(ctx context.Context, in edgesIn, emit func(*Edge) error) error {
+	// The id rules produce their edges without a fetch, so asking for them
+	// alone is answered from the reference and nothing else.
+	if in.MinTrust == SrcID {
+		kind, id, err := Classify(in.Ref)
+		if err != nil {
+			return err
+		}
+		return emitEach(pickEdges(idEdges(kind, id), in), emit)
+	}
+	_, _, g, err := in.C.GraphOfRef(ctx, in.Ref)
+	if err != nil {
+		return err
+	}
+	return emitEach(pickEdges(g.Edges, in), emit)
+}
+
+// idEdges is what the id alone says. It builds the record shell rather than
+// fetching one, which is the whole point: a thread id names its repository and
+// a repository id names its owner, and neither fact needs github.com.
+func idEdges(kind, id string) []Edge {
+	var rec any
+	switch kind {
+	case KindRepo:
+		owner, name, _ := SplitRepo(id)
+		r := &Repo{Owner: owner, Name: name}
+		r.setIdentity(KindRepo, id)
+		rec = r
+	case KindIssue, KindPR, KindDiscussion:
+		repo, num, ok := SplitThreadID(id)
+		if !ok {
+			return nil
+		}
+		n, _ := strconv.Atoi(num)
+		t := &Thread{Repo: repo, Number: n}
+		t.setIdentity(kind, id)
+		rec = &Issue{Thread: *t}
+	default:
+		return nil
+	}
+	_, out, _ := Extract(rec)
+	return FilterTrust(out, SrcID)
+}
+
+func pickEdges(in []Edge, opts edgesIn) []Edge {
+	out := FilterTrust(in, opts.MinTrust)
+	if opts.Predicate == "" {
+		return out
+	}
+	want := strings.TrimPrefix(opts.Predicate, "gh:")
+	kept := out[:0]
+	for _, e := range out {
+		if e.Predicate == want {
+			kept = append(kept, e)
+		}
+	}
+	return kept
+}
+
+type crawlIn struct {
+	C         *Client  `kit:"inject"`
+	Ref       string   `kit:"arg" help:"seed reference"`
+	Depth     int      `kit:"flag" help:"how many edges out to walk" default:"1"`
+	Follow    []string `kit:"flag" help:"predicates to follow, or all (default: the structural ones)"`
+	Kinds     []string `kit:"flag" help:"expand only these kinds"`
+	MinTrust  string   `kit:"flag,name=min-trust" help:"drop edges below this rule" default:"html"`
+	DryRun    bool     `kit:"flag,name=dry-run" help:"print the estimate and stop"`
+	NodesOnly bool     `kit:"flag,name=nodes-only" help:"emit nodes only"`
+	EdgesOnly bool     `kit:"flag,name=edges-only" help:"emit edges only"`
+	Limit     int      `kit:"flag,inherit"`
+}
+
+func crawl(ctx context.Context, in crawlIn, emit func(any) error) error {
+	o := CrawlOptions{
+		Depth:     in.Depth,
+		Follow:    in.Follow,
+		Kinds:     in.Kinds,
+		MinTrust:  in.MinTrust,
+		Limit:     in.Limit,
+		NodesOnly: in.NodesOnly,
+		EdgesOnly: in.EdgesOnly,
+	}
+	if in.DryRun {
+		plan, err := in.C.Estimate(ctx, in.Ref, o)
+		if err != nil {
+			return err
+		}
+		return emit(plan)
+	}
+	return in.C.Crawl(ctx, in.Ref, o, CrawlSink{
+		Node: func(n *Node) error { return emit(n) },
+		Edge: func(e *Edge) error { return emit(e) },
+		Fact: func(f *Fact) error { return emit(f) },
+	})
+}
+
+func listDeps(ctx context.Context, in repoListIn, emit func(*Dependency) error) error {
+	repo, err := ResolveRepo(in.Ref)
+	if err != nil {
+		return err
+	}
+	return in.C.Dependencies(ctx, repo, in.Limit, byValue(emit))
+}
+
+func listDependents(ctx context.Context, in repoListIn, emit func(*Dependent) error) error {
+	repo, err := ResolveRepo(in.Ref)
+	if err != nil {
+		return err
+	}
+	return in.C.Dependents(ctx, repo, in.Limit, byValue(emit))
+}
 
 func registerMetaOps(app *kit.App) {
 	kit.Handle(app, kit.OpMeta{

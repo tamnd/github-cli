@@ -861,3 +861,41 @@ type RepoStats struct {
 
 	PushedAt *time.Time `json:"pushed_at,omitempty" table:"pushed,time"`
 }
+
+// Dependency is one row of /network/dependencies: a package this repository
+// declares in one of its manifests.
+//
+// The identity is the repository the package resolves to, because that is the
+// only thing on the row with an address on github.com. A package GitHub cannot
+// resolve to a repository has no Kind and no ID, and its name is still on the
+// record, because a dependency list with the unresolvable rows silently dropped
+// is a lie about what the manifest contains.
+type Dependency struct {
+	Base
+
+	Repo    string `json:"repo"    table:"repo"`
+	Package string `json:"package" table:"package"`
+
+	SourceRepo   string `json:"source_repo,omitempty"  table:"source"`
+	Version      string `json:"version,omitempty"      table:"version"`
+	Relationship string `json:"relationship,omitempty" table:"rel"`
+	Ecosystem    string `json:"ecosystem,omitempty"    table:"ecosystem"`
+	Manifest     string `json:"manifest,omitempty"     table:"manifest"`
+	License      string `json:"license,omitempty"      table:"-"`
+}
+
+// Dependent is one row of /network/dependents: a repository that depends on
+// this one. The two counts are on the row, so a caller sorting the dependents
+// of a popular library by stars does not need a fetch per row.
+type Dependent struct {
+	Base
+
+	Repo      string `json:"repo"      table:"repo"`
+	Dependent string `json:"dependent" table:"dependent"`
+	Owner     string `json:"owner"     table:"-"`
+
+	Stars *int `json:"stars,omitempty" table:"stars"`
+	Forks *int `json:"forks,omitempty" table:"forks"`
+
+	AvatarURL string `json:"avatar_url,omitempty" table:"-"`
+}

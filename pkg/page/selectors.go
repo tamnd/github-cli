@@ -139,9 +139,9 @@ var (
 	// organization's readme has no class of its own, so the caller falls back
 	// to the markdown article, which is the same on both.
 	// Verified 2026-07-25 against sindresorhus and github.
-	ProfileReadme = Sel{Class: "profile-readme"}
-	ProfileVCardList  = Sel{Class: "vcard-details"}
-	ProfileAchieve    = Sel{Class: "js-profile-achievements"}
+	ProfileReadme    = Sel{Class: "profile-readme"}
+	ProfileVCardList = Sel{Class: "vcard-details"}
+	ProfileAchieve   = Sel{Class: "js-profile-achievements"}
 )
 
 // --- discussion pages, /{owner}/{repo}/discussions/{n} ---
@@ -259,6 +259,38 @@ var (
 	ReleaseTagIcon   = Sel{Class: "octicon-tag"}
 	ReleaseLabel     = Sel{Class: "Label"}
 	ReleaseAssetLink = Sel{Tag: "a", Attr: "href", AttrPrefix: "/"}
+)
+
+// --- dependency graph, /{owner}/{repo}/network/{dependencies,dependents} ---
+
+// The two dependency pages are the only keyless source for who depends on whom,
+// and they are the most fragile markup this tool reads: the rows are identified
+// by test hooks rather than by classes, and one of those hooks carries GitHub's
+// own typo, "dependendency". It is spelled here the way the page spells it, and
+// a fix on their side will show up as a missing edge rather than a wrong one.
+//
+// The two pages disagree on everything, including which attribute names a row:
+// dependencies uses data-test-selector and dependents uses data-test-id.
+// Verified 2026-07-25 against gohugoio/hugo.
+var (
+	DependencyRow = Sel{Attr: "data-test-selector", AttrValue: "dg-repo-pkg-dependency"}
+	// The name is an anchor when GitHub resolved the package to a repository
+	// and a plain span when it did not, so the class is the only thing both
+	// forms share.
+	DependencyName     = Sel{Class: "h4"}
+	DependencyLink     = Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "dependendency_graph_package"}
+	DependencyVersion  = Sel{Tag: "span", Class: "text-mono"}
+	DependencyRelation = Sel{Tag: "a", Attr: "data-test-selector", AttrValue: "relationship-label-link"}
+	DependencyManifest = Sel{Tag: "a", Attr: "data-test-selector", AttrValue: "dg-repo-pkg-manifest"}
+
+	DependentRow   = Sel{Attr: "data-test-id", AttrValue: "dg-repo-pkg-dependent"}
+	DependentRepo  = Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "repository"}
+	DependentUser  = Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "user"}
+	DependentStars = Sel{Tag: "span", Class: "text-bold", HasDescendantClass: "octicon-star"}
+	DependentForks = Sel{Tag: "span", Class: "text-bold", HasDescendantClass: "octicon-repo-forked"}
+	// The dependents pager is a cursor in a button, not a rel="next" anchor,
+	// so it needs its own selector and its own token.
+	DependentNext = Sel{Tag: "a", Class: "BtnGroup-item", Attr: "href", AttrContains: "dependents_after="}
 )
 
 // --- gist, gist.github.com/{id} ---
