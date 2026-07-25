@@ -102,3 +102,73 @@ func TestSelMatch(t *testing.T) {
 		}
 	}
 }
+
+// The markup here is the shape GitHub's markdown renderer emits into a README:
+// a heading, a paragraph broken across source lines, a list, and a fenced code
+// block that came through as <pre><code>.
+func TestBlockText(t *testing.T) {
+	doc := parse(t, `<html><body><article class="markdown-body">
+<h1>gh</h1>
+<p>GitHub on
+the command line.</p>
+<p>It brings <a href="/x">pull requests</a> to the terminal.</p>
+<ul><li>one</li><li>two</li></ul>
+<pre><code>func main() {
+	println("hi")
+}
+</code></pre>
+<p>Done.</p>
+</article></body></html>`)
+
+	want := strings.Join([]string{
+		"gh",
+		"",
+		"GitHub on the command line.",
+		"",
+		"It brings pull requests to the terminal.",
+		"",
+		"one",
+		"",
+		"two",
+		"",
+		"func main() {",
+		"\tprintln(\"hi\")",
+		"}",
+		"",
+		"Done.",
+	}, "\n")
+
+	got := BlockText(Find(doc, Sel{Class: "markdown-body"}))
+	if got != want {
+		t.Errorf("BlockText:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+func TestBlockTextKeepsCodeIndentation(t *testing.T) {
+	// A code block's leading whitespace is its meaning, so it survives even
+	// though every other line gets collapsed.
+	got := FragmentText("<pre>  indented\n    more\n</pre>")
+	if got != "  indented\n    more" {
+		t.Errorf("FragmentText(pre) = %q", got)
+	}
+}
+
+func TestBlockTextDropsChrome(t *testing.T) {
+	// Wrapper divs are the bulk of GitHub's markup and none of its prose, so a
+	// stack of them must not turn into a stack of blank lines.
+	got := FragmentText(`<div><div><div><p>a</p></div></div></div>
+<script>var x = 1</script>
+<div><p>b</p></div>`)
+	if got != "a\n\nb" {
+		t.Errorf("FragmentText = %q, want %q", got, "a\n\nb")
+	}
+}
+
+func TestBlockTextEmpty(t *testing.T) {
+	if got := BlockText(nil); got != "" {
+		t.Errorf("BlockText(nil) = %q", got)
+	}
+	if got := FragmentText("   "); got != "" {
+		t.Errorf("FragmentText(blank) = %q", got)
+	}
+}

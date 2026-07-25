@@ -120,6 +120,39 @@ func actor(login string) Actor {
 	}
 }
 
+// hrefPath reduces a link to its site-relative path, with no leading slash and
+// no query or fragment.
+//
+// It exists because GitHub writes the same link two ways on two templates:
+// "/BagToad" on a release page and "https://github.com/BagToad" on the release
+// list. A decoder that trims a leading slash and stops there works on one of
+// them and produces a login with a whole URL inside it on the other.
+func hrefPath(href string) string {
+	s := strings.TrimSpace(href)
+	if i := strings.Index(s, "://"); i >= 0 {
+		_, rest, ok := strings.Cut(s[i+3:], "/")
+		if !ok {
+			return ""
+		}
+		s = rest
+	}
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.Trim(s, "/")
+}
+
+// actorFromHref builds an Actor from a profile link however the template wrote
+// it. A link with more than one path segment is not a profile, so it gives an
+// empty result rather than a login with a slash in it.
+func actorFromHref(href string) Actor {
+	p := hrefPath(href)
+	if p == "" || strings.Contains(p, "/") {
+		return Actor{}
+	}
+	return actor(p)
+}
+
 // --- the data-loss guard ---
 
 // decodeExtra returns the keys of raw that v did not claim, minus the keys in

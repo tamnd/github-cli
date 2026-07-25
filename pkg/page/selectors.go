@@ -135,7 +135,11 @@ var (
 	ProfilePinnedList = Sel{Tag: "ol", Class: "js-pinned-items-reorder-list"}
 	ProfileOrgAvatar  = Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "organization"}
 	ProfileUserLink   = Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "user"}
-	ProfileReadme     = Sel{Class: "js-profile-readme"}
+	// ProfileReadme is the box a user profile puts its readme in. An
+	// organization's readme has no class of its own, so the caller falls back
+	// to the markdown article, which is the same on both.
+	// Verified 2026-07-25 against sindresorhus and github.
+	ProfileReadme = Sel{Class: "profile-readme"}
 	ProfileVCardList  = Sel{Class: "vcard-details"}
 	ProfileAchieve    = Sel{Class: "js-profile-achievements"}
 )

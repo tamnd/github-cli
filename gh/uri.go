@@ -365,15 +365,35 @@ func classifyBare(s string) (kind, id string, err error) {
 	case 1:
 		return KindRepo, s, nil
 	default:
-		// owner/name/something. Ambiguous between wiki, label, milestone, and
-		// package, so it goes to the one whose ids are numeric when it is
-		// numeric and to a file path otherwise.
+		// owner/name/something. When "something" is one of github.com's own
+		// route words this is a URL with the host left off, and the URL parser
+		// already knows exactly what it means, so hand it over rather than
+		// guess. That is what makes `github url cli/cli/blob/trunk/go.mod` and
+		// the full URL agree, which they did not when this guessed first.
 		p := strings.SplitN(s, "/", 3)
+		if word, _, _ := strings.Cut(p[2], "/"); routeWord[word] {
+			kind, id, _, err := classifyPath(s, "", s)
+			return kind, id, err
+		}
+		// Anything else is ambiguous between wiki, label, milestone, and
+		// package, so it goes to the one whose ids are numeric when it is
+		// numeric and to a wiki page otherwise.
 		if isNumber(p[2]) {
 			return KindMilestone, s, nil
 		}
 		return KindWiki, s, nil
 	}
+}
+
+// routeWord is the set of third segments that make a bare reference a route
+// rather than a name. It is exactly the case list of the switch in
+// classifyPath, and the two have to stay in step: a word here that the switch
+// does not handle resolves to the repository instead of to the thing named.
+var routeWord = map[string]bool{
+	"issues": true, "pull": true, "pulls": true, "discussions": true,
+	"commit": true, "commits": true, "tree": true, "blob": true, "raw": true,
+	"blame": true, "releases": true, "labels": true, "milestone": true,
+	"wiki": true, "pkgs": true, "compare": true, "archive": true,
 }
 
 // Locate turns a kind and id back into the canonical github.com URL.

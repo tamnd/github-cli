@@ -297,6 +297,9 @@ func (r *Repo) readRepoRoute(raw json.RawMessage, keepReadme bool) bool {
 		r.ReadmePath = f.Path
 		if keepReadme {
 			r.ReadmeHTML = f.RichText
+			// The payload has no plain-text form, and a README is the one
+			// field most consumers want as prose rather than as markup.
+			r.ReadmeText = page.FragmentText(f.RichText)
 		}
 		break
 	}

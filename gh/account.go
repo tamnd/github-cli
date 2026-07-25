@@ -326,17 +326,22 @@ func (o *Org) readAchievements(doc *html.Node) {
 // readReadme keeps both forms. The HTML is what GitHub rendered and the text is
 // what it says, and a knowledge-graph consumer wants the second while a viewer
 // wants the first.
+//
+// A user profile wraps its readme in a box named for the purpose. An
+// organization's sits in a plain Box with nothing on it to match, so the
+// search falls back to the markdown article, which both templates render and
+// of which a profile page has exactly one.
 func (o *Org) readReadme(doc *html.Node) {
-	n := page.Find(doc, page.ProfileReadme)
-	if n == nil {
+	root := doc
+	if n := page.Find(doc, page.ProfileReadme); n != nil {
+		root = n
+	}
+	body := page.Find(root, page.MarkdownBody)
+	if body == nil {
 		return
 	}
-	body := page.Find(n, page.MarkdownBody)
-	if body == nil {
-		body = n
-	}
 	o.ReadmeHTML = page.OuterHTML(body)
-	o.ReadmeText = page.Text(body)
+	o.ReadmeText = page.BlockText(body)
 }
 
 // --- small shared helpers ---

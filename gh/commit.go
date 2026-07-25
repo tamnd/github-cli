@@ -754,15 +754,14 @@ func decodeReleaseSection(repo string, sec *html.Node, keepBody bool) Release {
 		}
 	}
 	if a := page.Find(sec, page.Sel{Tag: "a", Attr: "data-hovercard-type", AttrValue: "user"}); a != nil {
-		author := actor(strings.TrimPrefix(page.Attr(a, "href"), "/"))
-		rel.Author = &author
+		rel.Author = releaseAuthor(page.Attr(a, "href"))
 	}
 	if t := page.Find(sec, page.RelTimeEl); t != nil {
 		rel.PublishedAt = parseTime(page.Attr(t, "datetime"))
 	}
 	if body := page.Find(sec, page.Sel{Class: "markdown-body"}); body != nil && keepBody {
 		rel.BodyHTML = page.OuterHTML(body)
-		rel.Body = page.Text(body)
+		rel.Body = page.BlockText(body)
 	}
 	for _, a := range page.FindAll(sec, page.Sel{Tag: "a", Attr: "href", AttrContains: "/archive/refs/tags/"}) {
 		href := page.Attr(a, "href")
@@ -782,6 +781,27 @@ func decodeReleaseSection(repo string, sec *html.Node, keepBody bool) Release {
 // template where a search overlay also has an h1 and the repository header also
 // has something with class Label.
 var primaryContent = page.Sel{Tag: "div", Attr: "data-hpc"}
+
+// releaseAuthor turns a publisher link into an actor, whichever of the two
+// release templates wrote it.
+//
+// A release cut by a workflow links to /apps/github-actions, which is not a
+// login: passing it through actor gives a profile URL that 404s. The app name
+// is the useful half, and the type says why it has no profile.
+func releaseAuthor(href string) *Actor {
+	p := hrefPath(href)
+	if p == "" {
+		return nil
+	}
+	if name, ok := strings.CutPrefix(p, "apps/"); ok {
+		return &Actor{Login: name, Type: "Bot", URL: BaseURL + "/apps/" + name}
+	}
+	if strings.Contains(p, "/") {
+		return nil
+	}
+	a := actor(p)
+	return &a
+}
 
 // decodeReleasePage reads the single-release template.
 //
@@ -838,16 +858,7 @@ func decodeReleasePage(repo string, doc *html.Node) (Release, bool) {
 	// first user hovercard instead would pick a contributor avatar from the
 	// footer, which is a different person and a wrong answer.
 	if a := page.Find(root, page.Sel{Tag: "a", Class: "text-bold"}); a != nil {
-		href := strings.TrimPrefix(page.Attr(a, "href"), "/")
-		// A release cut by a workflow links to /apps/github-actions, which is
-		// not a login and would give a profile URL that 404s. The app name is
-		// the useful half and the type says why it has no profile.
-		if name, ok := strings.CutPrefix(href, "apps/"); ok {
-			rel.Author = &Actor{Login: name, Type: "Bot", URL: BaseURL + "/apps/" + name}
-		} else if href != "" {
-			author := actor(href)
-			rel.Author = &author
-		}
+		rel.Author = releaseAuthor(page.Attr(a, "href"))
 	}
 	if t := page.Find(root, page.RelTimeEl); t != nil {
 		rel.PublishedAt = parseTime(page.Attr(t, "datetime"))
@@ -860,7 +871,7 @@ func decodeReleasePage(repo string, doc *html.Node) (Release, bool) {
 	}
 	if body := page.Find(root, page.Sel{Class: "markdown-body"}); body != nil {
 		rel.BodyHTML = page.OuterHTML(body)
-		rel.Body = page.Text(body)
+		rel.Body = page.BlockText(body)
 	}
 	for _, a := range page.FindAll(root, page.Sel{Tag: "a", Attr: "href", AttrContains: "/archive/refs/tags/"}) {
 		href := page.Attr(a, "href")

@@ -482,6 +482,27 @@ func (c *Client) Raw(ctx context.Context, repo, ref, path string) ([]byte, error
 	return res.Body, nil
 }
 
+// Download streams one file's bytes to w and reports how many it wrote.
+//
+// It exists next to Raw because the two have different costs. Raw buffers, so a
+// caller who wants to look at the bytes gets them in one piece and gets the
+// cache; Download does not buffer and does not cache, so a caller piping a
+// hundred-megabyte binary through to a disk pays for none of it.
+func (c *Client) Download(ctx context.Context, repo, ref, path string, w io.Writer) (int64, error) {
+	if _, _, ok := SplitRepo(repo); !ok {
+		return 0, usageBadID("repository", repo, "owner/name")
+	}
+	if ref == "" {
+		ref = "HEAD"
+	}
+	body, _, err := c.Stream(ctx, rawURL(repo, ref, strings.TrimPrefix(path, "/")))
+	if err != nil {
+		return 0, err
+	}
+	defer body.Close()
+	return io.Copy(w, body)
+}
+
 // Archive streams a repository tarball or zipball from codeload. The caller
 // closes the reader. Nothing here is cached or buffered: an archive is measured
 // in tens of megabytes and belongs on a disk, not in a map.

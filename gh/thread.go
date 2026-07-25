@@ -939,6 +939,7 @@ func (rc routeCommit) commit(repo string) Commit {
 	cm.setIdentity(KindCommit, repo+"@"+rc.OID)
 	cm.Subject = rc.ShortMessage
 	cm.BodyHTML = rc.BodyHTML
+	cm.Body = stripTags(rc.BodyHTML)
 	cm.AuthoredAt = parseTime(rc.AuthoredDate)
 	cm.CommittedAt = parseTime(rc.CommittedDate)
 	for _, a := range rc.Authors {
@@ -1038,7 +1039,7 @@ func readDiscussionHeader(d *Discussion, doc *html.Node) {
 		}
 	}
 	if n := page.Find(doc, page.DiscussionAuthor); n != nil {
-		d.Author = actor(strings.TrimPrefix(page.Attr(n, "href"), "/"))
+		d.Author = actorFromHref(page.Attr(n, "href"))
 	}
 	if n := page.Find(doc, page.RelTimeEl); n != nil {
 		d.CreatedAt = parseTime(page.Attr(n, "datetime"))
@@ -1058,9 +1059,7 @@ func readDiscussionHeader(d *Discussion, doc *html.Node) {
 		// the answer link, and the answer link's parent holds both.
 		if parent := n.Parent; parent != nil {
 			for _, a := range page.FindAll(parent, page.ProfileAnyLink) {
-				href := page.Attr(a, "href")
-				if strings.Count(strings.Trim(href, "/"), "/") == 0 && strings.HasPrefix(href, "/") {
-					who := actor(strings.TrimPrefix(href, "/"))
+				if who := actorFromHref(page.Attr(a, "href")); who.Login != "" {
 					d.AnswerAuthor = &who
 					break
 				}
@@ -1093,7 +1092,7 @@ func readDiscussionBody(d *Discussion, doc *html.Node) {
 		}
 		if body := page.Find(n, page.DiscussionBody); body != nil {
 			d.BodyHTML = page.OuterHTML(body)
-			d.Body = page.Text(body)
+			d.Body = page.BlockText(body)
 		}
 		return
 	}
@@ -1125,7 +1124,11 @@ func readQAPage(d *Discussion, p *page.Page) {
 			d.Title = e.Name
 		}
 		if e.Text != "" {
+			// Both halves move together. Letting the markup win here while the
+			// prose still came off the DOM would leave a record whose two body
+			// fields describe different text.
 			d.BodyHTML = e.Text
+			d.Body = page.FragmentText(e.Text)
 		}
 		if e.UpvoteCount != nil {
 			d.Upvotes = e.UpvoteCount

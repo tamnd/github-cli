@@ -176,6 +176,139 @@ func Text(n *html.Node) string {
 
 func collapse(s string) string { return strings.Join(strings.Fields(s), " ") }
 
+// blockTag is the set of elements that end a line of prose. It does not need to
+// be the full HTML block list, only the tags GitHub's renderer actually emits
+// into a README, a release note, or a comment body.
+var blockTag = map[string]bool{
+	"address": true, "article": true, "aside": true, "blockquote": true,
+	"br": true, "dd": true, "details": true, "div": true, "dl": true,
+	"dt": true, "figcaption": true, "figure": true, "footer": true,
+	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+	"header": true, "hr": true, "li": true, "main": true, "nav": true,
+	"ol": true, "p": true, "pre": true, "section": true, "summary": true,
+	"table": true, "tbody": true, "td": true, "th": true, "thead": true,
+	"tr": true, "ul": true,
+}
+
+// BlockText returns the prose of a subtree with the line structure the markup
+// implies, which is what Text deliberately throws away.
+//
+// Text collapses a whole subtree onto one line, which is right for a label and
+// wrong for a document: a twenty-kilobyte README as a single line is not a
+// readable rendering of anything. This keeps one line per block element, one
+// blank line between paragraphs, and the interior whitespace of a <pre> exactly
+// as it was, since indentation is the meaning of a code block rather than
+// decoration on it.
+func BlockText(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	var t textLines
+	t.walk(n)
+	return t.done()
+}
+
+// FragmentText is BlockText over an HTML fragment that arrived as a string.
+// Several of GitHub's payloads carry rendered markup as a JSON value rather
+// than as part of the document, so there is no node to walk until this parses
+// one.
+func FragmentText(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	doc, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		return ""
+	}
+	return BlockText(doc)
+}
+
+// textLines accumulates prose one line at a time. It exists because whether a
+// line keeps its whitespace depends on where the line started, which a single
+// pass over a string builder cannot know after the fact.
+type textLines struct {
+	out []string
+	cur strings.Builder
+	pre int  // depth inside <pre>
+	raw bool // the line being built started inside a <pre>
+}
+
+func (t *textLines) walk(n *html.Node) {
+	switch n.Type {
+	case html.TextNode:
+		t.text(n.Data)
+		return
+	case html.ElementNode:
+		switch n.Data {
+		case "script", "style", "template":
+			return
+		case "pre":
+			t.pre++
+			defer func() { t.pre-- }()
+		}
+		if blockTag[n.Data] {
+			t.brk()
+		}
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		t.walk(c)
+	}
+	if n.Type == html.ElementNode && blockTag[n.Data] {
+		t.brk()
+	}
+}
+
+func (t *textLines) text(s string) {
+	if t.pre == 0 {
+		t.cur.WriteString(s)
+		return
+	}
+	t.raw = true
+	for i, part := range strings.Split(s, "\n") {
+		if i > 0 {
+			t.brk()
+			t.raw = true
+		}
+		t.cur.WriteString(part)
+	}
+}
+
+func (t *textLines) brk() {
+	line := t.cur.String()
+	t.cur.Reset()
+	if t.raw {
+		line = strings.TrimRight(line, " \t\r")
+	} else {
+		line = collapse(line)
+	}
+	t.raw = false
+	t.out = append(t.out, line)
+}
+
+// done joins the lines, dropping runs of blank ones. A rendered document is
+// full of wrapper divs, and one blank line between paragraphs is the intent
+// while six is an artifact of the markup.
+func (t *textLines) done() string {
+	t.brk()
+	var b strings.Builder
+	blank := false
+	for _, line := range t.out {
+		if line == "" {
+			blank = true
+			continue
+		}
+		if blank && b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		blank = false
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(line)
+	}
+	return b.String()
+}
+
 // RelTime returns the datetime attribute of the first <relative-time>
 // descendant. The element's own text is never read: it is localised and
 // relative, and parsing it would be a whole class of bug for no gain.
