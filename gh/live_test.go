@@ -505,6 +505,117 @@ func TestLiveSearch(t *testing.T) {
 	}
 }
 
+// TestLiveContents covers the tree route, the blob route, and raw bytes. The
+// three are one test because the interesting question is whether the metadata
+// and the bytes still agree with each other.
+func TestLiveContents(t *testing.T) {
+	c := liveClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	t.Run("tree", func(t *testing.T) {
+		var got []TreeEntry
+		err := c.Tree(ctx, "cli/cli", "pkg", TreeOptions{}, func(e TreeEntry) error {
+			got = append(got, e)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) < 5 {
+			t.Fatalf("only %d entries under pkg/", len(got))
+		}
+		e := got[0]
+		if e.Name == "" || !strings.HasPrefix(e.Path, "pkg/") {
+			t.Errorf("path is not repository-relative: %+v", e)
+		}
+		if e.Type == "" {
+			t.Error("contentType missing")
+		}
+		// An empty ref means HEAD in the URL and a resolved SHA on the record.
+		if len(e.Ref) != 40 {
+			t.Errorf("ref %q is not a resolved commit", e.Ref)
+		}
+		logExtra(t, "tree", e.Extra)
+	})
+
+	t.Run("tree_recursive", func(t *testing.T) {
+		n := 0
+		err := c.Tree(ctx, "cli/cli", "pkg/iostreams", TreeOptions{Recursive: true, Limit: 12}, func(TreeEntry) error {
+			n++
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatal("recursive walk emitted nothing")
+		}
+	})
+
+	t.Run("blob", func(t *testing.T) {
+		f, err := c.Blob(ctx, "cli/cli", "pkg/iostreams/iostreams.go", BlobOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Language != "Go" {
+			t.Errorf("language %q, the blob layout route stopped decoding", f.Language)
+		}
+		if f.Lines == nil || *f.Lines < 100 {
+			t.Errorf("line count %v for a 13 KB file", f.Lines)
+		}
+		// GitHub's symbol analyser answers null about half the time and the
+		// same list a second later, on both surfaces, with any headers. Blob
+		// retries twice, and past that the honest report is "unavailable"
+		// rather than a hard failure here. not_analyzed for a Go file would be
+		// a real change and does fail.
+		switch f.SymbolsStatus {
+		case "ok":
+			if len(f.Symbols) == 0 {
+				t.Fatal("status ok with no symbols")
+			}
+			s := f.Symbols[0]
+			if s.Name == "" || s.Kind == "" || s.ExtentEnd == 0 {
+				t.Errorf("symbol is half empty: %+v", s)
+			}
+		case "unavailable", "timed_out":
+			t.Logf("symbols %s after three tries, the analyser was cold", f.SymbolsStatus)
+		default:
+			t.Errorf("symbols status %q for a Go file", f.SymbolsStatus)
+		}
+		logExtra(t, "blob", f.Extra)
+	})
+
+	t.Run("blob_markdown", func(t *testing.T) {
+		f, err := c.Blob(ctx, "cli/cli", "README.md", BlobOptions{Content: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(f.TOC) == 0 {
+			t.Error("no table of contents on a rendered markdown file")
+		}
+		if f.RichText == "" {
+			t.Error("no rendered html")
+		}
+		if !strings.Contains(f.Content, "gh") {
+			t.Errorf("content does not look like the readme: %.60q", f.Content)
+		}
+		if f.Via["content"] != "raw" {
+			t.Errorf("content provenance is %q", f.Via["content"])
+		}
+	})
+
+	t.Run("raw", func(t *testing.T) {
+		b, err := c.Raw(ctx, "cli/cli", "trunk", "go.mod")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(string(b), "module ") {
+			t.Errorf("go.mod does not start with a module line: %.40q", b)
+		}
+	})
+}
+
 // TestLiveCodeSearchStaysRefused guards the one search type that answers 200
 // with nothing. If GitHub ever opens it up this test fails, which is the
 // notification to go implement it.

@@ -128,12 +128,17 @@ type File struct {
 	Ref  string `json:"ref"  table:"-"`
 	Path string `json:"path" table:"path"`
 
-	Size        *int64 `json:"size,omitempty"     table:"size"`
-	Lines       *int   `json:"lines,omitempty"    table:"lines"`
-	Language    string `json:"language,omitempty" table:"language"`
-	IsBinary    bool   `json:"is_binary"          table:"-"`
-	IsLFS       bool   `json:"is_lfs"             table:"-"`
-	IsGenerated bool   `json:"is_generated"       table:"-"`
+	Size *int64 `json:"size,omitempty" table:"size"`
+	// SizeDisplay is what the page shows, "13.3 KB". The page has no byte
+	// count anywhere, so an exact Size costs a request to raw and is filled
+	// only when the bytes were fetched anyway.
+	SizeDisplay string `json:"size_display,omitempty" table:"-"`
+	Lines       *int   `json:"lines,omitempty"        table:"lines"`
+	Language    string `json:"language,omitempty"     table:"language"`
+	IsBinary    bool   `json:"is_binary"              table:"-"`
+	IsLFS       bool   `json:"is_lfs"                 table:"-"`
+	IsGenerated bool   `json:"is_generated"           table:"-"`
+	IsTruncated bool   `json:"is_truncated"           table:"-"`
 
 	RawURL string `json:"raw_url" table:"-"`
 
@@ -143,10 +148,11 @@ type File struct {
 
 	TOC     []Heading `json:"toc,omitempty"     table:"-"`
 	Symbols []Symbol  `json:"symbols,omitempty" table:"-"`
-	// SymbolsStatus is ok, timed_out, or not_analyzed. An empty symbol list
-	// with not_analyzed means the language is unsupported, which is a different
-	// fact from a file that genuinely has no symbols, and the caller should not
-	// have to guess which one it got.
+	// SymbolsStatus is ok, timed_out, not_analyzed, or unavailable. An empty
+	// symbol list with not_analyzed means the language is unsupported, which is
+	// a different fact from a file that genuinely has no symbols, and
+	// unavailable means GitHub's analyser had not finished when we asked. The
+	// caller should not have to guess which one it got.
 	SymbolsStatus string `json:"symbols_status,omitempty" table:"-"`
 }
 
