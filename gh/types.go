@@ -58,6 +58,7 @@ type Repo struct {
 	TagCount           *int   `json:"tag_count,omitempty"            table:"-"`
 	FileCount          *int   `json:"file_count,omitempty"           table:"-"`
 	DependentCount     *int   `json:"dependent_count,omitempty"      table:"-"`
+	ContributorCount   *int   `json:"contributor_count,omitempty"    table:"-"`
 
 	// License comes from one sidebar anchor and from nowhere else on any
 	// keyless surface. See page.LicenseLink.
@@ -763,8 +764,10 @@ type Trending struct {
 // --- contributions ---
 
 // Contributor is one person's contribution statistics for a repository. Weeks
-// arrives with the response so it is kept by default, and it is never a table
-// column because a hundred weeks is not a column.
+// arrives with the response but is dropped unless asked for, because the route
+// sends every week since the repository began for every contributor and that is
+// megabytes of mostly zeroes. It is never a table column either way, because a
+// hundred weeks is not a column.
 type Contributor struct {
 	Base
 
@@ -820,4 +823,41 @@ type Event struct {
 	BodyHTML string     `json:"body_html,omitempty" table:"-"`
 	Target   string     `json:"target,omitempty"    table:"-"`
 	At       *time.Time `json:"at,omitempty"        table:"at,time"`
+}
+
+// --- projections ---
+
+// LanguageShare is one language of one repository. The repository record
+// carries the same numbers as a map, which is the right shape to keep and the
+// wrong shape to print, so this is the row form of it.
+type LanguageShare struct {
+	Base
+
+	Repo     string  `json:"repo"     table:"repo"`
+	Language string  `json:"language" table:"language"`
+	Percent  float64 `json:"percent"  table:"percent"`
+	Color    string  `json:"color,omitempty" table:"-"`
+}
+
+// RepoStats is the counts and nothing else.
+//
+// Every field is already on Repo. The reason to have it separately is that a
+// record with eight numbers in it is something you can store once a day and
+// diff; a record with a readme in it is not.
+type RepoStats struct {
+	Base
+
+	Repo string `json:"repo" table:"repo"`
+
+	Stars        *int `json:"stars,omitempty"        table:"stars"`
+	Forks        *int `json:"forks,omitempty"        table:"forks"`
+	Watchers     *int `json:"watchers,omitempty"     table:"watching"`
+	OpenIssues   *int `json:"open_issues,omitempty"  table:"issues"`
+	Commits      *int `json:"commits,omitempty"      table:"commits"`
+	Releases     *int `json:"releases,omitempty"     table:"releases"`
+	Tags         *int `json:"tags,omitempty"         table:"tags"`
+	Contributors *int `json:"contributors,omitempty" table:"people"`
+	Dependents   *int `json:"dependents,omitempty"   table:"used_by"`
+
+	PushedAt *time.Time `json:"pushed_at,omitempty" table:"pushed,time"`
 }

@@ -23,6 +23,8 @@ func registerOps(app *kit.App) {
 	registerSearchOps(app)
 	registerContentOps(app)
 	registerHistoryOps(app)
+	registerPeopleOps(app)
+	registerDiscoverOps(app)
 	registerMetaOps(app)
 }
 
@@ -1040,6 +1042,329 @@ func listTimeline(ctx context.Context, in timelineIn, emit func(*TimelineItem) e
 		return err
 	}
 	return in.C.Timeline(ctx, repo, num, in.Limit, byValue(emit))
+}
+
+// --- people ---
+
+type accountListIn struct {
+	C     *Client `kit:"inject"`
+	Name  string  `kit:"arg" help:"a login, a profile URL, or a github:// URI"`
+	Limit int     `kit:"flag,inherit"`
+}
+
+type gistIn struct {
+	C       *Client `kit:"inject"`
+	Ref     string  `kit:"arg" help:"a gist id, a gist URL, or a github:// URI"`
+	Content bool    `kit:"flag" help:"fetch each file's raw content, one request per file"`
+}
+
+type contributionsIn struct {
+	C    *Client `kit:"inject"`
+	Name string  `kit:"arg" help:"a login, a profile URL, or a github:// URI"`
+	Year int     `kit:"flag" help:"calendar year, defaulting to the rolling last twelve months"`
+}
+
+type activityIn struct {
+	C     *Client `kit:"inject"`
+	Ref   string  `kit:"arg" help:"a login for a person's stream, or owner/name for a repository's"`
+	Limit int     `kit:"flag,inherit"`
+}
+
+func registerPeopleOps(app *kit.App) {
+	kit.Handle(app, kit.OpMeta{
+		Name: "followers", Group: "people", URIType: KindUser, List: true,
+		Summary: "List who follows an account",
+		Long: "The tab is 50 people a page and the pager is a plain next link, so an\n" +
+			"account with a hundred thousand followers is two thousand requests. Set\n" +
+			"--limit unless you mean all of them.",
+		Args: []kit.Arg{{Name: "name", Help: "login, profile URL, or github:// URI"}},
+	}, listFollowers)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "following", Group: "people", URIType: KindUser, List: true,
+		Summary: "List who an account follows",
+		Args:    []kit.Arg{{Name: "name", Help: "login, profile URL, or github:// URI"}},
+	}, listFollowing)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "members", Group: "people", URIType: KindUser, List: true,
+		Summary: "List an organization's public members",
+		Long: "Public members only, which is the organization's own choice per person\n" +
+			"and not something a token would widen for someone outside the org.",
+		Args: []kit.Arg{{Name: "name", Help: "organization login, URL, or github:// URI"}},
+	}, listMembers)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "stars", Group: "people", URIType: KindRepo, List: true,
+		Aliases: []string{"starred"},
+		Summary: "List what an account has starred",
+		Args:    []kit.Arg{{Name: "name", Help: "login, profile URL, or github:// URI"}},
+	}, listStarred)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "owned", Group: "people", URIType: KindRepo, List: true,
+		Summary: "List an account's repositories as the profile shows them",
+		Long: "This reads the profile's repositories tab, which is the only surface that\n" +
+			"lists forks and archived repositories in the account's own order. It is\n" +
+			"not called repos because `github repos --owner name` already exists, goes\n" +
+			"through search, and is the better tool when you want to filter or sort.",
+		Args: []kit.Arg{{Name: "name", Help: "login, profile URL, or github:// URI"}},
+	}, listAccountRepos)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "gists", Group: "people", URIType: KindGist, List: true,
+		Summary: "List an account's public gists",
+		Args:    []kit.Arg{{Name: "name", Help: "login, profile URL, or github:// URI"}},
+	}, listGists)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "gist", Group: "people", URIType: KindGist, Single: true, Resolver: true,
+		Summary: "Read one gist with its files",
+		Long: "The index gives each file's first few lines only, which is what the page\n" +
+			"renders. With --content each file is fetched whole from the raw host.",
+		Args: []kit.Arg{{Name: "ref", Help: "gist id, gist URL, or github:// URI"}},
+	}, getGist)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "contributions", Group: "people", URIType: KindContribution, List: true,
+		Aliases: []string{"calendar"},
+		Summary: "Read an account's contribution calendar, one record per day",
+		Long: "The count is not on the square. Each square points at a tooltip by id and\n" +
+			"the tooltip holds the sentence with the number in it, so this indexes the\n" +
+			"tooltips first and reads the squares against that index.",
+		Args: []kit.Arg{{Name: "name", Help: "login, profile URL, or github:// URI"}},
+	}, listContributions)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "activity", Group: "people", URIType: KindEvent, List: true,
+		Aliases: []string{"events", "feed"},
+		Summary: "Read a public activity feed",
+		Long: "One login gives that person's public events; one owner/name gives that\n" +
+			"repository's commit feed. Both are Atom, both are public, and neither has\n" +
+			"a pager, so a feed is however many entries GitHub decided to put in it.",
+		Args: []kit.Arg{{Name: "ref", Help: "a login, or owner/name"}},
+	}, listActivity)
+}
+
+func listFollowers(ctx context.Context, in accountListIn, emit func(*Account) error) error {
+	login, err := ResolveRef(KindUser, in.Name)
+	if err != nil {
+		return err
+	}
+	return in.C.Followers(ctx, login, in.Limit, byValue(emit))
+}
+
+func listFollowing(ctx context.Context, in accountListIn, emit func(*Account) error) error {
+	login, err := ResolveRef(KindUser, in.Name)
+	if err != nil {
+		return err
+	}
+	return in.C.Following(ctx, login, in.Limit, byValue(emit))
+}
+
+func listMembers(ctx context.Context, in accountListIn, emit func(*Account) error) error {
+	login, err := ResolveRef(KindOrg, in.Name)
+	if err != nil {
+		return err
+	}
+	return in.C.Members(ctx, login, in.Limit, byValue(emit))
+}
+
+func listStarred(ctx context.Context, in accountListIn, emit func(*Repo) error) error {
+	login, err := ResolveRef(KindUser, in.Name)
+	if err != nil {
+		return err
+	}
+	return in.C.Starred(ctx, login, in.Limit, byValue(emit))
+}
+
+func listAccountRepos(ctx context.Context, in accountListIn, emit func(*Repo) error) error {
+	login, err := ResolveRef(KindUser, in.Name)
+	if err != nil {
+		return err
+	}
+	return in.C.ReposAsShown(ctx, login, in.Limit, byValue(emit))
+}
+
+func listGists(ctx context.Context, in accountListIn, emit func(*Gist) error) error {
+	login, err := ResolveRef(KindUser, in.Name)
+	if err != nil {
+		return err
+	}
+	return in.C.Gists(ctx, login, in.Limit, byValue(emit))
+}
+
+func getGist(ctx context.Context, in gistIn, emit func(*Gist) error) error {
+	id, err := ResolveRef(KindGist, in.Ref)
+	if err != nil {
+		return err
+	}
+	g, err := in.C.Gist(ctx, id, in.Content)
+	if err != nil {
+		return err
+	}
+	return emit(g)
+}
+
+func listContributions(ctx context.Context, in contributionsIn, emit func(*ContributionDay) error) error {
+	login, err := ResolveRef(KindUser, in.Name)
+	if err != nil {
+		return err
+	}
+	return in.C.Contributions(ctx, login, in.Year, byValue(emit))
+}
+
+// listActivity does not resolve the reference, because the feed takes both a
+// login and an owner/name and the reader tells them apart itself. Sending it
+// through ResolveRef would force a choice that neither kind wins.
+func listActivity(ctx context.Context, in activityIn, emit func(*Event) error) error {
+	return in.C.Activity(ctx, strings.TrimPrefix(in.Ref, BaseURL+"/"), in.Limit, byValue(emit))
+}
+
+// --- discovery and statistics ---
+
+type trendingIn struct {
+	C              *Client `kit:"inject"`
+	Since          string  `kit:"flag" help:"daily, weekly, or monthly"`
+	Language       string  `kit:"flag" help:"a language slug, as it appears in the trending URL"`
+	SpokenLanguage string  `kit:"flag,name=spoken" help:"a two-letter natural language code"`
+	Developers     bool    `kit:"flag" help:"list trending developers instead of repositories"`
+	Limit          int     `kit:"flag,inherit"`
+}
+
+type topicIn struct {
+	C    *Client `kit:"inject"`
+	Name string  `kit:"arg" help:"a topic slug, a topic URL, or a github:// URI"`
+}
+
+type repoListIn struct {
+	C     *Client `kit:"inject"`
+	Ref   string  `kit:"arg" help:"owner/name, or any URL from the repository"`
+	Limit int     `kit:"flag,inherit"`
+}
+
+type repoRefIn struct {
+	C   *Client `kit:"inject"`
+	Ref string  `kit:"arg" help:"owner/name, or any URL from the repository"`
+}
+
+func registerDiscoverOps(app *kit.App) {
+	kit.Handle(app, kit.OpMeta{
+		Name: "trending", Group: "discover", URIType: KindRepo, List: true,
+		Summary: "List what is trending",
+		Long: "Trending is the clearest case for reading pages. There is no JSON version\n" +
+			"of it anywhere, with a token or without, so a page decoder is not a\n" +
+			"fallback here, it is the only implementation that can exist.",
+	}, listTrending)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "topic", Group: "discover", URIType: KindTopic, Single: true, Resolver: true,
+		Summary: "Read one topic page",
+		Long: "The search result for a topic has a name and a blurb. The page has the long\n" +
+			"description, the logo, who created the thing, when it was released, the\n" +
+			"Wikipedia link, and the related topics, which is most of what makes a topic\n" +
+			"worth a record.",
+		Args: []kit.Arg{{Name: "name", Help: "topic slug, URL, or github:// URI"}},
+	}, getTopic)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "forks", Group: "discover", URIType: KindRepo, List: true,
+		Summary: "List a repository's public forks",
+		Args:    []kit.Arg{{Name: "ref", Help: "owner/name, or any URL from the repository"}},
+	}, listForks)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "contributors", Group: "discover", URIType: KindContributor, List: true,
+		Summary: "List contributors with their commit, addition, and deletion counts",
+		Long: "This reads the contributor graph's own data route, which answers 202 with\n" +
+			"an empty body while GitHub computes the numbers. That is normal rather\n" +
+			"than an error, so the first call on a large repository waits a few seconds\n" +
+			"and every call after it is instant.",
+		Args: []kit.Arg{{Name: "ref", Help: "owner/name, or any URL from the repository"}},
+	}, listContributors)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "languages", Group: "discover", URIType: KindRepo, List: true,
+		Summary: "Report the language histogram, one record per language",
+		Args:    []kit.Arg{{Name: "ref", Help: "owner/name, or any URL from the repository"}},
+	}, listLanguages)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "stats", Group: "discover", URIType: KindRepo, Single: true,
+		Summary: "Report a repository's counts and nothing else",
+		Long: "Every field here is on the repository record too. The point of having it\n" +
+			"separately is that a record with eight numbers in it is something you can\n" +
+			"store once a day and diff, and a record with a readme in it is not.",
+		Args: []kit.Arg{{Name: "ref", Help: "owner/name, or any URL from the repository"}},
+	}, getStats)
+}
+
+func listTrending(ctx context.Context, in trendingIn, emit func(any) error) error {
+	opts := TrendingOptions{
+		Since:          in.Since,
+		Language:       in.Language,
+		SpokenLanguage: in.SpokenLanguage,
+		Limit:          in.Limit,
+	}
+	if in.Developers {
+		return in.C.TrendingDevelopers(ctx, opts, func(a Account) error { return emit(&a) })
+	}
+	return in.C.Trending(ctx, opts, func(t Trending) error { return emit(&t) })
+}
+
+func getTopic(ctx context.Context, in topicIn, emit func(*Topic) error) error {
+	slug, err := ResolveRef(KindTopic, in.Name)
+	if err != nil {
+		return err
+	}
+	t, err := in.C.TopicPage(ctx, slug)
+	if err != nil {
+		return err
+	}
+	return emit(t)
+}
+
+func listForks(ctx context.Context, in repoListIn, emit func(*Repo) error) error {
+	repo, err := ResolveRepo(in.Ref)
+	if err != nil {
+		return err
+	}
+	return in.C.Forks(ctx, repo, in.Limit, byValue(emit))
+}
+
+type contributorsIn struct {
+	C     *Client `kit:"inject"`
+	Ref   string  `kit:"arg" help:"owner/name, or any URL from the repository"`
+	Weeks bool    `kit:"flag" help:"keep the per-week breakdown, which is large"`
+	Limit int     `kit:"flag,inherit"`
+}
+
+func listContributors(ctx context.Context, in contributorsIn, emit func(*Contributor) error) error {
+	repo, err := ResolveRepo(in.Ref)
+	if err != nil {
+		return err
+	}
+	return in.C.Contributors(ctx, repo, ContributorOptions{Weeks: in.Weeks, Limit: in.Limit}, byValue(emit))
+}
+
+func listLanguages(ctx context.Context, in repoRefIn, emit func(*LanguageShare) error) error {
+	repo, err := ResolveRepo(in.Ref)
+	if err != nil {
+		return err
+	}
+	return in.C.Languages(ctx, repo, byValue(emit))
+}
+
+func getStats(ctx context.Context, in repoRefIn, emit func(*RepoStats) error) error {
+	repo, err := ResolveRepo(in.Ref)
+	if err != nil {
+		return err
+	}
+	s, err := in.C.Stats(ctx, repo)
+	if err != nil {
+		return err
+	}
+	return emit(s)
 }
 
 // --- meta ---

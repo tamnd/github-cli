@@ -462,10 +462,16 @@ func descriptionFromOG(title, id string) string {
 
 // --- the deep pass ---
 
-// deepenRepo runs the extra fetch --deep opts into: the dependent count off the
-// dependency graph. The failure is soft. A dependency graph that is disabled is
-// a fact about the repository, not an error in the read.
+// deepenRepo runs the two extra fetches --deep opts into: the sidebar
+// fragment, which is where the language histogram and the contributor count
+// actually live, and the dependency graph for the dependent count. Both
+// failures are soft. A dependency graph that is disabled is a fact about the
+// repository, not an error in the read.
 func (c *Client) deepenRepo(ctx context.Context, r *Repo) error {
+	if sb, err := c.sidebar(ctx, r.ID); err == nil && sb != nil {
+		sb.apply(r)
+		r.addSource(repoSubURL(r.ID, "_sidebar"))
+	}
 	if n, err := c.dependents(ctx, r.ID); err == nil && n != nil {
 		r.DependentCount = n
 	}
@@ -473,16 +479,92 @@ func (c *Client) deepenRepo(ctx context.Context, r *Repo) error {
 	return nil
 }
 
+// sidebarData is the fragment the repository page's own front end fetches to
+// fill the About column in. Everything on it is deferred, which is why a cold
+// page has a skeleton where the language bar goes.
+type sidebarData struct {
+	Languages *struct {
+		Languages []sidebarLanguage `json:"languages"`
+	} `json:"languages"`
+	Contributors *struct {
+		ContributorCount *int `json:"contributorCount"`
+	} `json:"contributors"`
+	UsedBy *struct {
+		DependentsCount *int `json:"dependentsCount"`
+	} `json:"usedBy"`
+}
+
+type sidebarLanguage struct {
+	Name       string  `json:"name"`
+	Percentage float64 `json:"percentage"`
+	Color      string  `json:"color"`
+}
+
+// sidebar reads /{owner}/{repo}/_sidebar.
+//
+// This is the answer to a question the rest of this file used to give up on.
+// /{owner}/{repo}/graphs/languages 301s back to the repository page for an
+// anonymous client, and none of show_partial, /languages, or
+// /graphs/languages-data exist, so the conclusion was that the histogram had no
+// keyless source. It has one: the same fragment the page itself waits for, and
+// it needs no credential, only the header that says a script is asking.
+func (c *Client) sidebar(ctx context.Context, id string) (*sidebarData, error) {
+	if _, _, ok := SplitRepo(id); !ok {
+		return nil, usageBadID("repository", id, "owner/name")
+	}
+	res, err := c.Get(ctx, repoSubURL(id, "_sidebar"), SurfaceXHR)
+	if err != nil {
+		return nil, err
+	}
+	var sb sidebarData
+	if err := json.Unmarshal(res.Body, &sb); err != nil {
+		return nil, badPayload(id, err)
+	}
+	return &sb, nil
+}
+
+// apply folds the fragment into the record.
+//
+// The percentages are what the fragment states, so they are stored as
+// percentages times one hundred and marked as such. A byte count and a
+// percentage are not the same number and nothing downstream should be able to
+// mistake one for the other.
+func (sb *sidebarData) apply(r *Repo) {
+	if sb.Contributors != nil && sb.Contributors.ContributorCount != nil {
+		r.ContributorCount = sb.Contributors.ContributorCount
+	}
+	if sb.UsedBy != nil && sb.UsedBy.DependentsCount != nil {
+		r.DependentCount = sb.UsedBy.DependentsCount
+	}
+	langs := sb.langs()
+	if len(langs) == 0 {
+		return
+	}
+	out := map[string]int64{}
+	for _, l := range langs {
+		out[l.Name] = int64(l.Percentage * 100)
+	}
+	r.Languages = out
+	r.Language = topLanguage(out)
+	if r.LanguageColor == "" {
+		r.LanguageColor = langs[0].Color
+	}
+	recordVia(&r.Base, "languages", "sidebar-percent")
+}
+
+func (sb *sidebarData) langs() []sidebarLanguage {
+	if sb == nil || sb.Languages == nil {
+		return nil
+	}
+	return sb.Languages.Languages
+}
+
 // searchLanguage asks repository search for the repository by name, because the
 // search result carries the primary language and its colour and the repository
 // page does not.
 //
-// The obvious place to look is /{owner}/{repo}/graphs/languages, and it is a
-// dead end: it 301s back to the repository page for an anonymous client, and
-// none of show_partial, /languages, or /graphs/languages-data exist. The
-// language bar in the sidebar is the other source, and on a cold page it is a
-// skeleton with no /search?l= links in it at all. So the histogram with real
-// byte counts has no keyless source, and the language name does, one search away.
+// This is the shallow path. It is one request and gives the primary language
+// only; the sidebar fragment gives the whole histogram and is what --deep uses.
 func (c *Client) searchLanguage(ctx context.Context, id string) (lang, color string, err error) {
 	owner, name, ok := SplitRepo(id)
 	if !ok {

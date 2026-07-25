@@ -263,15 +263,21 @@ func claimedKeys(t reflect.Type) []string {
 
 // --- small shared helpers ---
 
-// parseTime accepts the three time formats GitHub uses across its surfaces:
-// RFC 3339 with a zone, RFC 3339 in UTC with a Z, and the datetime attribute
-// on a <relative-time> element, which is the same thing.
+// parseTime accepts the time formats GitHub uses across its surfaces: RFC 3339
+// with a zone, RFC 3339 in UTC with a Z, the bare date on a commit calendar,
+// and the space-separated form the activity Atom feed puts in its published
+// element, which is the only surface that does not use RFC 3339.
 func parseTime(s string) *time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil
 	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05Z0700", "2006-01-02"} {
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z0700",
+		"2006-01-02 15:04:05 MST",
+		"2006-01-02",
+	} {
 		if t, err := time.Parse(layout, s); err == nil {
 			u := t.UTC()
 			return &u

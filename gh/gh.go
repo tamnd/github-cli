@@ -19,6 +19,7 @@ const (
 	BaseURL   = "https://github.com"
 	RawURL    = "https://raw.githubusercontent.com"
 	CodeLoad  = "https://codeload.github.com"
+	GistURL   = "https://gist.github.com"
 	GistRaw   = "https://gist.githubusercontent.com"
 	AvatarURL = "https://avatars.githubusercontent.com"
 	OpenGraph = "https://opengraph.githubassets.com"

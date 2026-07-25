@@ -47,6 +47,14 @@ const (
 	KindWiki       = "wiki"
 	KindAdvisory   = "advisory"
 	KindCompare    = "compare"
+
+	// These three name records GitHub derives rather than serves. There is no
+	// page whose address is one contributor's statistics or one day of a
+	// calendar, so they get a URI and no canonical URL, and Locate points at
+	// the page they were read from instead of inventing one.
+	KindContributor  = "contributor"
+	KindContribution = "contribution"
+	KindEvent        = "event"
 )
 
 // Scheme is the URI scheme this package mints and dereferences.
@@ -163,7 +171,8 @@ func knownKind(k string) bool {
 	switch k {
 	case KindRepo, KindUser, KindOrg, KindIssue, KindPR, KindDiscussion, KindCommit,
 		KindBranch, KindTag, KindRelease, KindFile, KindTree, KindLabel, KindMilestone,
-		KindTopic, KindGist, KindPackage, KindAction, KindWiki, KindAdvisory, KindCompare:
+		KindTopic, KindGist, KindPackage, KindAction, KindWiki, KindAdvisory, KindCompare,
+		KindContributor, KindContribution, KindEvent:
 		return true
 	}
 	return false
@@ -477,7 +486,26 @@ func Locate(kind, id string) (string, error) {
 	case KindAdvisory:
 		return BaseURL + "/advisories/" + id, nil
 	case KindGist:
-		return "https://gist.github.com/" + id, nil
+		return GistURL + "/" + id, nil
+	case KindContributor:
+		// The id is owner/name@login and the page that states it is the graph,
+		// which is the whole roster rather than the one row. That is the
+		// closest true address, so it is the one given.
+		repo, _, ok := cutRev(id)
+		if !ok {
+			return "", errs.Usage("contributor id %q is not owner/name@login", id)
+		}
+		return BaseURL + "/" + repo + "/graphs/contributors", nil
+	case KindContribution:
+		login, _, ok := cutRev(id)
+		if !ok {
+			return "", errs.Usage("contribution id %q is not login@date", id)
+		}
+		return BaseURL + "/" + login, nil
+	case KindEvent:
+		// An event's address is the thing it happened to, which the feed states
+		// per entry and no rule can reconstruct from the id.
+		return "", errs.Usage("an event has no address of its own; read its url field")
 	case KindCompare:
 		repo, rng, ok := cutRev(id)
 		if !ok {
