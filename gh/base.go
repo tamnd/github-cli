@@ -28,7 +28,7 @@ type Base struct {
 	Kind    string            `json:"kind"              table:"kind"`
 	ID      string            `json:"id"                table:"id" kit:"id"`
 	URI     string            `json:"uri,omitempty"     table:"-"`
-	URL     string            `json:"url,omitempty"     table:"-"`
+	URL     string            `json:"url,omitempty"     table:"-,url"`
 	Sources []string          `json:"sources,omitempty" table:"-"`
 	Via     map[string]string `json:"via,omitempty"     table:"-"`
 	Extra   json.RawMessage   `json:"extra,omitempty"   table:"-"`
@@ -106,6 +106,12 @@ type Actor struct {
 	URL        string `json:"url,omitempty"         table:"-"`
 	URI        string `json:"uri,omitempty"         table:"-"`
 }
+
+// String is the login, which is what an author column in a table is for. The
+// renderer would otherwise fall back to JSON for a struct field, and a cell
+// holding the whole actor is wide enough to push every other column off the
+// screen. The full thing is still there in every other format.
+func (a Actor) String() string { return a.Login }
 
 // actor builds an Actor from a login, filling the derived fields. An empty
 // login gives an empty Actor rather than one with a URL to nowhere.
