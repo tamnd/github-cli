@@ -57,6 +57,17 @@ const (
 	KindEvent        = "event"
 )
 
+// Kinds is the whole set, in the order above, for help text and for the error a
+// bad kind produces. Listing them is the difference between an error a reader
+// can act on and one that sends them to the source.
+var Kinds = []string{
+	KindRepo, KindUser, KindOrg, KindIssue, KindPR, KindDiscussion,
+	KindCommit, KindBranch, KindTag, KindRelease, KindFile, KindTree,
+	KindLabel, KindMilestone, KindTopic, KindGist, KindPackage, KindAction,
+	KindWiki, KindAdvisory, KindCompare,
+	KindContributor, KindContribution, KindEvent,
+}
+
 // Scheme is the URI scheme this package mints and dereferences.
 const Scheme = "github"
 
@@ -159,21 +170,21 @@ func parseURI(s string) (kind, id, anchor string, err error) {
 	}
 	kind, id, ok := strings.Cut(rest, "/")
 	if !ok || kind == "" || id == "" {
-		return "", "", "", errs.Usage("%q is not a %s:// URI", s, Scheme)
+		return "", "", "", errs.Usage("not a %s:// URI: %q", Scheme, s)
 	}
 	if !knownKind(kind) {
-		return "", "", "", errs.Usage("%q is not a kind this tool knows", kind)
+		return "", "", "", errs.Usage("unknown kind %q; the kinds are %s", kind, strings.Join(Kinds, ", "))
 	}
 	return kind, strings.TrimSuffix(id, "/"), anchor, nil
 }
 
+// knownKind reads the same list the error message prints, so a kind cannot be
+// accepted here and left out of the list a reader is shown.
 func knownKind(k string) bool {
-	switch k {
-	case KindRepo, KindUser, KindOrg, KindIssue, KindPR, KindDiscussion, KindCommit,
-		KindBranch, KindTag, KindRelease, KindFile, KindTree, KindLabel, KindMilestone,
-		KindTopic, KindGist, KindPackage, KindAction, KindWiki, KindAdvisory, KindCompare,
-		KindContributor, KindContribution, KindEvent:
-		return true
+	for _, want := range Kinds {
+		if k == want {
+			return true
+		}
 	}
 	return false
 }
@@ -184,7 +195,7 @@ func knownKind(k string) bool {
 func parseURL(raw string) (kind, id, anchor string, err error) {
 	u, perr := url.Parse(raw)
 	if perr != nil {
-		return "", "", "", errs.Usage("%q is not a URL: %v", raw, perr)
+		return "", "", "", errs.Usage("not a URL: %q, %v", raw, perr)
 	}
 	host := strings.ToLower(u.Host)
 	host = strings.TrimPrefix(host, "www.")
@@ -196,13 +207,13 @@ func parseURL(raw string) (kind, id, anchor string, err error) {
 		// /{owner}/{repo}/{ref}/{path...}
 		p := strings.Split(path, "/")
 		if len(p) < 4 {
-			return "", "", "", errs.Usage("%q is not a raw file URL", raw)
+			return "", "", "", errs.Usage("not a raw file URL: %q", raw)
 		}
 		return KindFile, p[0] + "/" + p[1] + "@" + p[2] + "/" + strings.Join(p[3:], "/"), anchor, nil
 	case "gist.github.com", "gist.githubusercontent.com":
 		p := strings.Split(path, "/")
 		if len(p) == 0 || p[0] == "" {
-			return "", "", "", errs.Usage("%q names no gist", raw)
+			return "", "", "", errs.Usage("no gist named in %q", raw)
 		}
 		// A gist URL is either /{id} or /{owner}/{id}. The id is the last
 		// segment that looks like one.
@@ -210,13 +221,13 @@ func parseURL(raw string) (kind, id, anchor string, err error) {
 	case "github.com", "codeload.github.com":
 		return classifyPath(path, anchor, raw)
 	default:
-		return "", "", "", errs.Usage("%q is not a github.com URL", raw)
+		return "", "", "", errs.Usage("not a github.com URL: %q", raw)
 	}
 }
 
 func classifyPath(path, anchor, raw string) (kind, id, a string, err error) {
 	if path == "" {
-		return "", "", "", errs.Usage("%q names no resource", raw)
+		return "", "", "", errs.Usage("no resource named in %q", raw)
 	}
 	p := strings.Split(path, "/")
 
@@ -240,7 +251,7 @@ func classifyPath(path, anchor, raw string) (kind, id, a string, err error) {
 		}
 	}
 	if reserved[p[0]] {
-		return "", "", "", errs.Usage("%q is a github.com page, not a resource this tool reads", raw)
+		return "", "", "", errs.Usage("no resource behind %q; it is a github.com page, not a thing this tool reads", raw)
 	}
 	if len(p) == 1 {
 		return KindUser, p[0], anchor, nil
@@ -311,9 +322,12 @@ func classifyPath(path, anchor, raw string) (kind, id, a string, err error) {
 		}
 		return KindWiki, repo + "/Home", anchor, nil
 	case "pkgs":
-		// /{owner}/{repo}/pkgs/{type}/{name}
+		// /{owner}/{repo}/pkgs/{type}/{name}, where the name is usually the
+		// repository and the thing inside it and so carries a %2F. Parsing
+		// decoded that back into a slash before the split, so the name is
+		// everything from the type onwards rather than the last segment.
 		if len(rest) >= 3 {
-			return KindPackage, repo + "/" + rest[len(rest)-1], anchor, nil
+			return KindPackage, repo + "/" + strings.Join(rest[2:], "/"), anchor, nil
 		}
 	case "compare":
 		if len(rest) >= 2 {
@@ -341,10 +355,10 @@ func classifyBare(s string) (kind, id string, err error) {
 	}
 	if base, num, ok := strings.Cut(s, "#"); ok {
 		if !isNumber(num) {
-			return "", "", errs.Usage("%q: the part after # must be a number", s)
+			return "", "", errs.Usage("the part after # must be a number, in %q", s)
 		}
 		if strings.Count(base, "/") != 1 {
-			return "", "", errs.Usage("%q: a thread reference looks like owner/name#123", s)
+			return "", "", errs.Usage("not a thread reference: %q, which should look like owner/name#123", s)
 		}
 		// Bare owner/name#N is an issue, which is the same guess github.com
 		// makes: /issues/N redirects to /pull/N when N is a pull request.
@@ -353,7 +367,7 @@ func classifyBare(s string) (kind, id string, err error) {
 	if i := strings.Index(s, "@"); i >= 0 && strings.Count(s[:i], "/") == 1 {
 		repo, rev := s[:i], s[i+1:]
 		if rev == "" {
-			return "", "", errs.Usage("%q: nothing after @", s)
+			return "", "", errs.Usage("nothing after the @ in %q", s)
 		}
 		if r, path, ok := strings.Cut(rev, "/"); ok {
 			return KindFile, repo + "@" + r + "/" + path, nil
@@ -368,7 +382,7 @@ func classifyBare(s string) (kind, id string, err error) {
 	switch strings.Count(s, "/") {
 	case 0:
 		if reserved[s] {
-			return "", "", errs.Usage("%q is a github.com page, not an account", s)
+			return "", "", errs.Usage("no account behind %q; it is a github.com page, not a profile", s)
 		}
 		return KindUser, s, nil
 	case 1:
@@ -410,7 +424,7 @@ var routeWord = map[string]bool{
 // safe to pipe back into the tool.
 func Locate(kind, id string) (string, error) {
 	if id == "" {
-		return "", errs.Usage("%s with no id", kind)
+		return "", errs.Usage("no id given for a %s", kind)
 	}
 	switch kind {
 	case KindRepo:
@@ -420,7 +434,7 @@ func Locate(kind, id string) (string, error) {
 	case KindIssue, KindPR, KindDiscussion:
 		repo, num, ok := strings.Cut(id, "#")
 		if !ok {
-			return "", errs.Usage("%s id %q is missing its number", kind, id)
+			return "", errs.Usage("missing number: the %s id %q needs one", kind, id)
 		}
 		seg := map[string]string{KindIssue: "issues", KindPR: "pull", KindDiscussion: "discussions"}[kind]
 		return BaseURL + "/" + repo + "/" + seg + "/" + num, nil
@@ -439,13 +453,13 @@ func Locate(kind, id string) (string, error) {
 	case KindTag, KindRelease:
 		repo, tag, ok := cutRev(id)
 		if !ok {
-			return "", errs.Usage("%s id %q is missing its tag", kind, id)
+			return "", errs.Usage("missing tag: the %s id %q needs one", kind, id)
 		}
 		return BaseURL + "/" + repo + "/releases/tag/" + tag, nil
 	case KindFile, KindTree:
 		repo, ref, path, ok := SplitPathID(id)
 		if !ok {
-			return "", errs.Usage("%s id %q is not owner/name@ref/path", kind, id)
+			return "", errs.Usage("wrong shape: the %s id %q is not owner/name@ref/path", kind, id)
 		}
 		seg := "blob"
 		if kind == KindTree {
@@ -478,7 +492,11 @@ func Locate(kind, id string) (string, error) {
 		if !ok {
 			return "", errs.Usage("package id %q is not owner/name/package", id)
 		}
-		return BaseURL + "/" + repo + "/pkgs/container/" + name, nil
+		// The name is escaped because a container package is usually called
+		// after the repository and the thing inside it, so it has a slash in
+		// it. GitHub wants that slash as %2F: the unescaped form 404s and the
+		// escaped one is the page.
+		return BaseURL + "/" + repo + "/pkgs/container/" + url.PathEscape(name), nil
 	case KindTopic:
 		return BaseURL + "/topics/" + id, nil
 	case KindAction:
@@ -513,7 +531,7 @@ func Locate(kind, id string) (string, error) {
 		}
 		return BaseURL + "/" + repo + "/compare/" + rng, nil
 	}
-	return "", errs.Usage("%q is not a kind this tool knows", kind)
+	return "", errs.Usage("unknown kind %q; the kinds are %s", kind, strings.Join(Kinds, ", "))
 }
 
 // cutRev splits owner/name@rev. It looks for the `@` after the second slash so
