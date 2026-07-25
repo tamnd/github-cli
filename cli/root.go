@@ -38,6 +38,7 @@ func NewApp() *kit.App {
 	app.AddCommand(newReadmeCmd())
 	app.AddCommand(newArchiveCmd())
 	app.AddCommand(newDiffCmd())
+	app.AddCommand(newPageCmd())
 	app.AddCommand(newRDFCmd())
 	app.AddCommand(newExportCmd())
 	return app

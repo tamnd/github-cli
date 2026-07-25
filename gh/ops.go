@@ -1582,6 +1582,28 @@ func registerMetaOps(app *kit.App) {
 			"answers it best and what to fall back to when that surface declines. A\n" +
 			"route that is not in the table is unsupported rather than guessed at.",
 	}, listRoutes)
+
+	kit.Handle(app, kit.OpMeta{
+		Name: "doctor", Group: "meta", List: true,
+		Summary: "Check the environment, the site, and the cache",
+		Long: "doctor answers the question people ask when a command comes back wrong: is\n" +
+			"it me, is it the network, or did GitHub change the page. It reads a small\n" +
+			"file to check reachability, a repository page to check that the embedded\n" +
+			"payload is still where every reader expects it, and the cache directory to\n" +
+			"check that it can be written.\n\n" +
+			"It also says out loud that GITHUB_TOKEN and GH_TOKEN are ignored, because\n" +
+			"a token in the environment does nothing here and the failure that causes is\n" +
+			"invisible: the tool works, it is just as rate limited as before, and the\n" +
+			"obvious conclusion is that the token is wrong.",
+	}, runDoctor)
+}
+
+type doctorIn struct {
+	C *Client `kit:"inject"`
+}
+
+func runDoctor(ctx context.Context, in doctorIn, emit func(*Check) error) error {
+	return in.C.Doctor(ctx, emit)
 }
 
 type parseIn struct {

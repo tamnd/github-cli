@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/tamnd/any-cli/kit/errs"
+
+	"github.com/tamnd/github-cli/pkg/page"
 )
 
 // Client reads github.com. It is safe for concurrent use: the pacer and the
@@ -188,6 +190,21 @@ func (c *Client) GetJSON(ctx context.Context, rawURL string, s Surface, v any) (
 // GetHTML fetches a page.
 func (c *Client) GetHTML(ctx context.Context, rawURL string) (*Response, error) {
 	return c.Get(ctx, rawURL, SurfaceHTML)
+}
+
+// Page fetches a URL and hands back the whole extraction, nothing dropped. Every
+// reader in the package works from this, and `github page` prints it, which is
+// what makes the debugging tool show the same view the readers see rather than a
+// second opinion about the page.
+//
+// The URL is taken as given rather than resolved from an entity, because the
+// pages worth inspecting most are the ones the model does not cover yet.
+func (c *Client) Page(ctx context.Context, rawURL string) (*page.Page, error) {
+	res, err := c.GetHTML(ctx, rawURL)
+	if err != nil {
+		return nil, err
+	}
+	return page.Extract(res.FinalURL, res.Body), nil
 }
 
 // Stream opens a body without buffering, retrying, or caching. Release assets
