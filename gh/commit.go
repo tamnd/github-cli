@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"github.com/tamnd/any-cli/kit/errs"
 	"github.com/tamnd/github-cli/pkg/gitproto"
 	"github.com/tamnd/github-cli/pkg/page"
 )
@@ -1047,7 +1048,7 @@ func (c *Client) Patch(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(res.Body), nil
+	return plainText(res, url)
 }
 
 // Diff returns the unified diff, which is the patch without the commit
@@ -1056,6 +1057,20 @@ func (c *Client) Diff(ctx context.Context, url string) (string, error) {
 	res, err := c.Get(ctx, strings.TrimSuffix(url, "/")+".diff", SurfaceRaw)
 	if err != nil {
 		return "", err
+	}
+	return plainText(res, url)
+}
+
+// plainText refuses to hand back a web page.
+//
+// A .diff or .patch suffix on something that is not a change gets answered with
+// the page instead of a 404. /golang/go/pull/1000 is an issue, so its .diff is
+// the issue page, 200 and all. Without this the command writes a quarter of a
+// megabyte of markup to a terminal, or worse, to the file someone redirected it
+// into, and the mistake surfaces later as a patch that will not apply.
+func plainText(res *Response, url string) (string, error) {
+	if ct := res.Header.Get("Content-Type"); strings.Contains(ct, "text/html") {
+		return "", errs.NotFound("no diff at %s; github answered with a page, which means the reference names something that is not a change", shortURL(url))
 	}
 	return string(res.Body), nil
 }
