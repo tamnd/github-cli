@@ -232,32 +232,29 @@ func (c *Client) Blob(ctx context.Context, repo, path string, opts BlobOptions) 
 	f.URL = blobURL(repo, ref, path)
 	f.RawURL = rawURL(repo, ref, path)
 
+	// One read, and it is the page.
+	//
+	// This used to be the route JSON with the page as a fallback, and it is not
+	// any more, because the route JSON stopped carrying the half that matters.
+	// Both halves are on the page: codeViewBlobRoute has the rendered view, the
+	// table of contents, and the symbol block, and codeViewBlobLayoutRoute has
+	// the file's own metadata, the language, the size, the line counts. The
+	// route JSON now answers with codeViewBlobRoute alone, so asking it for the
+	// language gets an empty string and asking it for both gets two requests
+	// where the page is one.
+	//
+	// Symbols used to be a third request. The list arrived sometimes on the
+	// first read and sometimes only on the second, so an unavailable one was
+	// asked for again before it was believed. It no longer arrives at all: the
+	// page still says symbolsEnabled and still renders the button, and the
+	// block behind it is null on every file of every repository tried, on both
+	// surfaces, with or without a cache, signed out. So that retry was spent to
+	// learn nothing, and it is gone.
 	url := blobURL(repo, ref, path)
-	final, err := c.blobRoute(ctx, f, url)
-	if err != nil {
+	if err := c.readBlobPage(ctx, f, opts.Styled); err != nil {
 		return nil, err
 	}
-	f.addSource(final)
-
-	// Symbols are served by a background analyser whose result is cached for a
-	// short while, so the same URL answers with the symbol list one second and
-	// null the next, on either surface, with any headers. Nothing about the
-	// request changes it. So an unavailable list is retried: once on the page,
-	// which is a different cache, and once more on the route with our own cache
-	// entry dropped. Two extra requests is worth the difference between a
-	// symbol list and silence, and after that the record says unavailable and
-	// means it.
-	if opts.Styled || f.SymbolsStatus == "unavailable" {
-		if err := c.readBlobPage(ctx, f, opts.Styled); err == nil {
-			f.addSource(url)
-		}
-	}
-	if f.SymbolsStatus == "unavailable" {
-		c.cacheDrop(url, SurfaceRouteJSON)
-		if _, err := c.blobRoute(ctx, f, url); err != nil {
-			return nil, err
-		}
-	}
+	f.addSource(url)
 	if opts.Content && !f.IsBinary {
 		b, err := c.Raw(ctx, repo, ref, path)
 		if err != nil {
@@ -275,28 +272,6 @@ func (c *Client) Blob(ctx context.Context, repo, path string, opts BlobOptions) 
 		}
 	}
 	return f, nil
-}
-
-// blobRoute fetches and decodes the render half of a blob into f, returning the
-// URL it ended up reading. It is a function rather than inline code because the
-// page fallback decodes the same block a second time.
-func (c *Client) blobRoute(ctx context.Context, f *File, url string) (string, error) {
-	var env struct {
-		Payload struct {
-			Route json.RawMessage `json:"codeViewBlobRoute"`
-		} `json:"payload"`
-	}
-	res, err := c.GetJSON(ctx, url, SurfaceRouteJSON, &env)
-	if err != nil {
-		return "", err
-	}
-	if len(env.Payload.Route) == 0 {
-		return "", structureChanged(f.Repo + ":" + f.Path)
-	}
-	if err := decodeBlobRoute(f, env.Payload.Route); err != nil {
-		return "", err
-	}
-	return res.FinalURL, nil
 }
 
 // blobRouteData is the render half of a blob: what GitHub worked out about the file
@@ -335,8 +310,8 @@ func decodeBlobRoute(f *File, raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return badPayload(f.Path, err)
 	}
-	// Assigned, not appended. This block gets decoded twice when the page
-	// fallback runs, and appending would give a file two of every heading.
+	// Assigned, not appended, so a second decode of the same block replaces the
+	// headings rather than giving the file two of each.
 	f.TOC = nil
 	for _, h := range v.HeaderInfo.TOC {
 		f.TOC = append(f.TOC, Heading{Level: h.Level, Text: h.Text, Anchor: h.Anchor})
@@ -381,9 +356,10 @@ func decodeBlobRoute(f *File, raw json.RawMessage) error {
 	return nil
 }
 
-// readBlobPage reads the page for the three things the route JSON does not
-// reliably give: the blob's own metadata, a symbol list that is actually there,
-// and, when styled is set, the per-line source with its highlight spans.
+// readBlobPage reads a blob page and decodes every block of it: the rendered
+// view and the symbols from codeViewBlobRoute, the file's own metadata from
+// codeViewBlobLayoutRoute, and, when styled is set, the per-line source with
+// its highlight spans.
 //
 // The styled key really does contain a dot in its name and really is not
 // nested. It is payload["codeViewBlobLayoutRoute.StyledBlob"], one key, and a
@@ -400,7 +376,10 @@ func (c *Client) readBlobPage(ctx context.Context, f *File, styled bool) error {
 	if err := json.Unmarshal(embeddedPayload(res.Body), &env); err != nil {
 		return badPayload(f.Path, err)
 	}
-	if raw, ok := env.Payload["codeViewBlobRoute"]; ok && f.SymbolsStatus != "ok" {
+	if len(env.Payload) == 0 {
+		return structureChanged(f.Repo + ":" + f.Path)
+	}
+	if raw, ok := env.Payload["codeViewBlobRoute"]; ok {
 		if err := decodeBlobRoute(f, raw); err != nil {
 			return err
 		}

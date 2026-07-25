@@ -14,8 +14,11 @@ import (
 // for when you want to know whether a surface still looks the way the spec says
 // it does.
 //
-// `make fixtures` runs these with recording on, which is how the offline
-// scenario suite gets its data.
+// These are the tests that catch the failure this tool cannot survive: GitHub
+// moving something. Nothing offline can see that, because an offline test
+// checks the parser against bytes that were already parsed once. So the
+// assertions here are deliberately about shape rather than values. A star count
+// changes hourly and pinning one turns a test into a clock.
 
 func liveClient(t *testing.T) *Client {
 	t.Helper()
@@ -564,11 +567,11 @@ func TestLiveContents(t *testing.T) {
 		if f.Lines == nil || *f.Lines < 100 {
 			t.Errorf("line count %v for a 13 KB file", f.Lines)
 		}
-		// GitHub's symbol analyser answers null about half the time and the
-		// same list a second later, on both surfaces, with any headers. Blob
-		// retries twice, and past that the honest report is "unavailable"
-		// rather than a hard failure here. not_analyzed for a Go file would be
-		// a real change and does fail.
+		// GitHub's symbol analyser answers null on every file of every
+		// repository tried now, on both surfaces, signed out. So "unavailable"
+		// is the expected answer here rather than a failure, and if the block
+		// ever comes back this asserts it is shaped right. not_analyzed for a
+		// Go file would be a real change and does fail.
 		switch f.SymbolsStatus {
 		case "ok":
 			if len(f.Symbols) == 0 {
@@ -579,7 +582,7 @@ func TestLiveContents(t *testing.T) {
 				t.Errorf("symbol is half empty: %+v", s)
 			}
 		case "unavailable", "timed_out":
-			t.Logf("symbols %s after three tries, the analyser was cold", f.SymbolsStatus)
+			t.Logf("symbols %s, the analyser did not answer", f.SymbolsStatus)
 		default:
 			t.Errorf("symbols status %q for a Go file", f.SymbolsStatus)
 		}

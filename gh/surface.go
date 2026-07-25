@@ -30,7 +30,7 @@ type RouteInfo struct {
 var Routes = []RouteInfo{
 	{"/{owner}/{repo}", "embedded", "route-json", "sidebarAbout lives only in the HTML payload"},
 	{"/{owner}/{repo}/tree/{ref}/{path}", "route-json", "embedded", ""},
-	{"/{owner}/{repo}/blob/{ref}/{path}", "route-json", "raw", "metadata from the route, bytes from raw"},
+	{"/{owner}/{repo}/blob/{ref}/{path}", "embedded", "raw", "the route JSON dropped the metadata block, so the page is the read; bytes from raw"},
 	{"/{owner}/{repo}/branches", "route-json", "xhr", ""},
 	{"/{owner}/{repo}/refs", "xhr", "git", "names only, 6 KB against 588 KB"},
 	{"/{owner}/{repo}/commits/{ref}", "route-json", "feed", ""},
