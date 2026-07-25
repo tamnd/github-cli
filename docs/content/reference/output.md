@@ -72,7 +72,15 @@ A non-empty `extra` is a bug report: it means the site added something and this 
 github tags golang/go --fields name,sha
 ```
 
-`--fields` works on every format, and it can call back a field the table hides, since a hidden field keeps its name.
+`--fields` works on the column formats: `table`, `csv`, `tsv`, `markdown`, and `list`.
+It can call back a field the table hides, since a hidden field keeps its name.
+
+It does not touch `json`, `jsonl`, or `raw`, which always carry the whole record.
+Narrow those with `jq`:
+
+```bash
+github tags golang/go -n 3 | jq '{name, sha}'
+```
 
 `--no-header` drops the header row from `table`, `csv`, and `tsv`, which is what a downstream tool usually wants.
 
