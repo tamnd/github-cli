@@ -181,7 +181,7 @@ func (c *Client) GetJSON(ctx context.Context, rawURL string, s Surface, v any) (
 	}
 	if v != nil {
 		if err := json.Unmarshal(resp.Body, v); err != nil {
-			return resp, errs.New(errs.KindNetwork, "%s: %v", shortURL(rawURL), err)
+			return resp, errs.New(errs.KindNetwork, "cannot decode the json from %s: %v", shortURL(rawURL), err)
 		}
 	}
 	return resp, nil
@@ -397,7 +397,7 @@ func (c *Client) Poll(ctx context.Context, rawURL string, s Surface) (*Response,
 			wait *= 2
 		}
 	}
-	return nil, errs.Unsupported("%s: github is still computing this statistic, try again shortly", shortURL(rawURL))
+	return nil, errs.Unsupported("still computing: github has not finished this statistic yet, try again shortly (%s)", shortURL(rawURL))
 }
 
 // --- URL building ---

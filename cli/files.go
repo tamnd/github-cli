@@ -158,7 +158,7 @@ func (c *readmeCmd) run(ctx context.Context, args []string) error {
 		text = r.ReadmeHTML
 	}
 	if text == "" {
-		return errs.NotFound("%s has no README", id)
+		return errs.NotFound("no README in %s", id)
 	}
 	_, err = io.WriteString(os.Stdout, text)
 	return err
@@ -282,5 +282,9 @@ func diffURL(args []string) (string, error) {
 	case gh.KindCommit, gh.KindCompare, gh.KindPR:
 		return gh.Locate(kind, id)
 	}
-	return "", errs.Usage("%q is a %s; diff needs a commit, a pull request, a compare URL, or a repository with two refs", args[0], kind)
+	// Leads with a word, not with the argument. The renderer capitalises the
+	// first token of an error, and "golang/go" coming back as "Golang/Go" reads
+	// like the tool mangled the input rather than like the input was the wrong
+	// kind of thing.
+	return "", errs.Usage("cannot diff %q, which is a %s; diff needs a commit, a pull request, a compare URL, or a repository with two refs", args[0], kind)
 }

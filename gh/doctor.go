@@ -18,6 +18,19 @@ import (
 // a person and by a script, and so the failing one can be picked out with the
 // same --fields and -o json every other command takes.
 
+// doctorLong is the command's help. It lives here rather than beside the
+// registration because it names the token variables, and TestNoAuth wants every
+// mention of those names in the one file whose job is to talk about them.
+const doctorLong = "doctor answers the question people ask when a command comes back wrong: is\n" +
+	"it me, is it the network, or did GitHub change the page. It reads a small\n" +
+	"file to check reachability, a repository page to check that the embedded\n" +
+	"payload is still where every reader expects it, and the cache directory to\n" +
+	"check that it can be written.\n\n" +
+	"It also says out loud that GITHUB_TOKEN and GH_TOKEN are ignored, because a\n" +
+	"token in the environment does nothing here and the failure that causes is\n" +
+	"invisible: the tool works, it stays exactly as rate limited as before, and\n" +
+	"the obvious conclusion is that the token is wrong."
+
 // Check is one diagnostic.
 type Check struct {
 	Name   string `json:"name"   table:"check"`

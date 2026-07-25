@@ -58,7 +58,21 @@ func ResolveRef(want, input string) (string, error) {
 			return repo, nil
 		}
 	}
-	return "", errs.Usage("%q is a %s, not a %s", input, kind, want)
+	return "", errs.Usage("wrong kind: %q is %s, not %s", input, aKind(kind), aKind(want))
+}
+
+// aKind puts the right article in front of a kind name. Five of the twenty-four
+// start with a vowel, and "not a org" in an error message reads like the tool
+// was written in a hurry.
+func aKind(kind string) string {
+	if kind == "" {
+		return "nothing"
+	}
+	switch kind[0] {
+	case 'a', 'e', 'i', 'o', 'u':
+		return "an " + kind
+	}
+	return "a " + kind
 }
 
 // guessed reports whether Classify was guessing rather than reading. Anything
@@ -92,7 +106,7 @@ func resolveThread(want, ref string, num int) (repo string, number int, err erro
 		// is a real error rather than a guess to be forgiven. A bare
 		// owner/name#123 is a guess: nothing in it says which of the two it is.
 		if kind != want && !guessed(ref, kind) {
-			return "", 0, errs.Usage("%q is a %s, not a %s", ref, kind, want)
+			return "", 0, errs.Usage("wrong kind: %q is %s, not %s", ref, aKind(kind), aKind(want))
 		}
 		number, _ = strconv.Atoi(n)
 		return r, number, nil
@@ -102,7 +116,7 @@ func resolveThread(want, ref string, num int) (repo string, number int, err erro
 		return "", 0, err
 	}
 	if num <= 0 {
-		return "", 0, errs.Usage("%s needs a number, either as a second argument or in the URL", want)
+		return "", 0, errs.Usage("no number given; %s needs one, either as a second argument or in the URL", want)
 	}
 	return repo, num, nil
 }
@@ -117,7 +131,7 @@ func resolveRev(want, ref, rev string) (repo, out string, err error) {
 	}
 	if r, v, ok := cutRev(id); ok && rev == "" {
 		if kind != want && !guessed(ref, kind) {
-			return "", "", errs.Usage("%q is a %s, not a %s", ref, kind, want)
+			return "", "", errs.Usage("wrong kind: %q is %s, not %s", ref, aKind(kind), aKind(want))
 		}
 		return r, v, nil
 	}
@@ -456,7 +470,7 @@ func resolveCompare(ref, base, head string) (string, string, string, error) {
 	if kind == KindCompare && base == "" {
 		repo, rng, ok := cutRev(id)
 		if !ok {
-			return "", "", "", errs.Usage("%q is not a range", ref)
+			return "", "", "", errs.Usage("not a range: %q", ref)
 		}
 		// Three dots is the merge-base form and two is the direct diff.
 		// github.com accepts both and means different things by them, so the
@@ -466,7 +480,7 @@ func resolveCompare(ref, base, head string) (string, string, string, error) {
 				return repo, a, b, nil
 			}
 		}
-		return "", "", "", errs.Usage("%q has no base...head in it", ref)
+		return "", "", "", errs.Usage("no base...head in %q", ref)
 	}
 	repo, err := ResolveRepo(ref)
 	if err != nil {
@@ -506,7 +520,7 @@ func (c *Client) fetchOne(ctx context.Context, kind, id string) (any, error) {
 	case KindIssue, KindPR, KindDiscussion:
 		repo, n, ok := SplitThreadID(id)
 		if !ok {
-			return nil, errs.Usage("%q is not a thread id", id)
+			return nil, errs.Usage("not a thread id: %q", id)
 		}
 		num, _ := strconv.Atoi(n)
 		switch kind {
@@ -520,38 +534,38 @@ func (c *Client) fetchOne(ctx context.Context, kind, id string) (any, error) {
 	case KindCommit:
 		repo, sha, ok := cutRev(id)
 		if !ok {
-			return nil, errs.Usage("%q is not a commit id", id)
+			return nil, errs.Usage("not a commit id: %q", id)
 		}
 		return c.CommitInfo(ctx, repo, sha, CommitInfoOptions{})
 	case KindRelease:
 		repo, tag, ok := cutRev(id)
 		if !ok {
-			return nil, errs.Usage("%q is not a release id", id)
+			return nil, errs.Usage("not a release id: %q", id)
 		}
 		return c.Release(ctx, repo, tag, ReleaseOptions{Assets: true, Body: true})
 	case KindBranch, KindTag:
 		repo, name, ok := cutRev(id)
 		if !ok {
-			return nil, errs.Usage("%q is not a %s id", id, kind)
+			return nil, errs.Usage("not a %s id: %q", kind, id)
 		}
 		return c.oneRef(ctx, kind, repo, name)
 	case KindCompare:
 		repo, rng, ok := cutRev(id)
 		if !ok {
-			return nil, errs.Usage("%q is not a range", id)
+			return nil, errs.Usage("not a range: %q", id)
 		}
 		base, head, found := strings.Cut(rng, "...")
 		if !found {
 			base, head, found = strings.Cut(rng, "..")
 		}
 		if !found {
-			return nil, errs.Usage("%q has no base...head in it", id)
+			return nil, errs.Usage("no base...head in %q", id)
 		}
 		return c.CompareRefs(ctx, repo, base, head, CompareOptions{Files: true})
 	case KindFile:
 		repo, ref, path, ok := SplitPathID(id)
 		if !ok {
-			return nil, errs.Usage("%q is not a file id", id)
+			return nil, errs.Usage("not a file id: %q", id)
 		}
 		return c.Blob(ctx, repo, path, BlobOptions{Ref: ref})
 	case KindTopic:
@@ -582,7 +596,7 @@ func (c *Client) oneRef(ctx context.Context, kind, repo, name string) (*GitRef, 
 		return nil, err
 	}
 	if found == nil {
-		return nil, errs.NotFound("%s %s has no %s named %s", repo, kind, kind, name)
+		return nil, errs.NotFound("no %s named %s in %s", kind, name, repo)
 	}
 	return found, nil
 }
@@ -773,7 +787,7 @@ func (c *Client) searchOne(ctx context.Context, typ, query string, limit int, em
 	case SearchCode:
 		return c.SearchCodeBy(ctx, query, limit, func(f File) error { return any1(&f) })
 	}
-	return errs.Usage("%q is not a search type; the types are %s", typ, strings.Join(SearchTypes, ", "))
+	return errs.Usage("not a search type: %q; the types are %s", typ, strings.Join(SearchTypes, ", "))
 }
 
 // --- contents ---
@@ -824,11 +838,14 @@ func registerContentOps(app *kit.App) {
 	kit.Handle(app, kit.OpMeta{
 		Name: "symbols", Group: "contents",
 		Summary: "List the definitions GitHub extracted from a file",
-		Long: "GitHub runs a symbol extractor over every blob it renders and ships the\n" +
-			"result in the route payload. There is no unauthenticated REST equivalent\n" +
-			"anywhere. The extractor is asynchronous, so an empty list can mean the\n" +
-			"language is unsupported or that the analysis had not finished; the record\n" +
-			"says which, and this command reports it rather than guessing.",
+		Long: "GitHub runs a symbol extractor over every blob it renders and used to\n" +
+			"ship the result in the route payload. There is no unauthenticated REST\n" +
+			"equivalent anywhere, which is why this command exists.\n\n" +
+			"As of now it will not return anything. The blob still says symbols are\n" +
+			"enabled and still renders the button, and the list behind it is empty for\n" +
+			"a signed-out reader on every file tried. This reports that rather than\n" +
+			"returning an empty list, and stays here because the field is still in the\n" +
+			"payload and may fill in again.",
 		Args: []kit.Arg{
 			{Name: "ref", Help: "owner/name, or a blob URL"},
 			{Name: "path", Help: "a file inside the repository", Optional: true},
@@ -883,14 +900,18 @@ func listSymbols(ctx context.Context, in symbolIn, emit func(*Symbol) error) err
 	if err != nil {
 		return err
 	}
-	// The path goes in the middle of these sentences rather than at the front,
-	// because the CLI title-cases the first word of an error and a path is the
-	// one thing that must not be title-cased.
+	// Both messages lead with a plain word. The CLI title-cases whatever an
+	// error starts with, which turns a path into nonsense and, less obviously,
+	// turns GitHub into Github.
 	switch f.SymbolsStatus {
 	case "not_analyzed":
-		return errs.Unsupported("GitHub does not extract symbols from the language %s is written in", path)
+		return errs.Unsupported("no symbols for %s: GitHub does not extract them from the language it is written in", path)
 	case "unavailable", "timed_out":
-		return errs.Network("GitHub's symbol analysis for %s had not finished; ask again in a moment", path)
+		// Unsupported rather than a network kind, because asking again does not
+		// help. GitHub still renders the symbols button and still sets
+		// symbolsEnabled on the blob, and the list behind it comes back empty
+		// for a signed-out reader on every file tried.
+		return errs.Unsupported("no symbol list for %s: GitHub serves none to a signed-out reader, though it still offers the panel", path)
 	}
 	return emitEach(f.Symbols, emit)
 }
@@ -1586,15 +1607,7 @@ func registerMetaOps(app *kit.App) {
 	kit.Handle(app, kit.OpMeta{
 		Name: "doctor", Group: "meta", List: true,
 		Summary: "Check the environment, the site, and the cache",
-		Long: "doctor answers the question people ask when a command comes back wrong: is\n" +
-			"it me, is it the network, or did GitHub change the page. It reads a small\n" +
-			"file to check reachability, a repository page to check that the embedded\n" +
-			"payload is still where every reader expects it, and the cache directory to\n" +
-			"check that it can be written.\n\n" +
-			"It also says out loud that GITHUB_TOKEN and GH_TOKEN are ignored, because\n" +
-			"a token in the environment does nothing here and the failure that causes is\n" +
-			"invisible: the tool works, it is just as rate limited as before, and the\n" +
-			"obvious conclusion is that the token is wrong.",
+		Long:    doctorLong,
 	}, runDoctor)
 }
 

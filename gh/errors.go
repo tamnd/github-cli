@@ -23,6 +23,11 @@ import (
 //
 // Both mean "wrong surface", which is a thing the client can fix by trying the
 // other one. Turning them into errors here would hide that.
+//
+// Every message here leads with a word rather than with the path it is about.
+// The renderer title-cases whatever a message starts with, and a path that
+// comes back as Golang/Go/Blob/Master reads like the tool mangled the input
+// rather than like the page was missing.
 
 // statusError classifies a non-2xx response.
 func statusError(rawURL string, status int, body []byte) error {
@@ -33,23 +38,23 @@ func statusError(rawURL string, status int, body []byte) error {
 		// public. Saying "pass a token" would be wrong: there is no token to
 		// pass. Saying what is actually true is more useful.
 		if isRateLimitBody(body) {
-			return errs.RateLimited("%s: github is throttling anonymous reads, try again shortly", where)
+			return errs.RateLimited("github is throttling anonymous reads, try again shortly (%s)", where)
 		}
-		return errs.NeedAuth("%s: not public, and this tool reads only public pages (use gh for the rest)", where)
+		return errs.NeedAuth("not public: %s, and this tool reads only public pages (use gh for the rest)", where)
 	case status == http.StatusNotFound:
-		return errs.NotFound("%s: not found", where)
+		return errs.NotFound("not found: %s", where)
 	case status == http.StatusGone:
-		return errs.NotFound("%s: gone", where)
+		return errs.NotFound("gone: %s", where)
 	case status == http.StatusTooManyRequests:
-		return errs.RateLimited("%s: rate limited", where)
+		return errs.RateLimited("rate limited on %s", where)
 	case status == http.StatusUnavailableForLegalReasons:
-		return errs.Unsupported("%s: unavailable for legal reasons (DMCA)", where)
+		return errs.Unsupported("unavailable for legal reasons (DMCA): %s", where)
 	case status == http.StatusBadRequest:
-		return errs.Usage("%s: bad request", where)
+		return errs.Usage("bad request: %s", where)
 	case status >= 500:
-		return errs.New(errs.KindNetwork, "%s: server error %d", where, status)
+		return errs.New(errs.KindNetwork, "server error %d on %s", status, where)
 	default:
-		return errs.New(errs.KindGeneric, "%s: http %d", where, status)
+		return errs.New(errs.KindGeneric, "http %d on %s", status, where)
 	}
 }
 
@@ -74,9 +79,9 @@ func wrapNetwork(rawURL string, err error) error {
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return errs.New(errs.KindNetwork, "%s: cannot resolve %s", shortURL(rawURL), dnsErr.Name)
+		return errs.New(errs.KindNetwork, "cannot resolve %s, reading %s", dnsErr.Name, shortURL(rawURL))
 	}
-	return errs.New(errs.KindNetwork, "%s: %v", shortURL(rawURL), err)
+	return errs.New(errs.KindNetwork, "reading %s: %v", shortURL(rawURL), err)
 }
 
 // shortURL trims the scheme and the host so an error message reads as a path.
@@ -95,13 +100,13 @@ func shortURL(raw string) string {
 // code search, traffic, clones, referrers. It names what would be needed rather
 // than being vague, because a vague "unsupported" wastes an afternoon.
 func notPublic(what, why string) error {
-	return errs.Unsupported("%s is not available without a session: %s", what, why)
+	return errs.Unsupported("not available without a session: %s, %s", what, why)
 }
 
 // usageBadID rejects a malformed identifier before a request goes out. Showing
 // the expected shape saves the round trip and the 404 that would follow it.
 func usageBadID(kind, got, want string) error {
-	return errs.Usage("%q is not a %s, expected %s", got, kind, want)
+	return errs.Usage("expected a %s like %s, got %q", kind, want, got)
 }
 
 // structureChanged is the loud failure from doc 02 section 7: the page came
@@ -110,7 +115,7 @@ func usageBadID(kind, got, want string) error {
 // zero exit code.
 func structureChanged(what string) error {
 	return errs.New(errs.KindNetwork,
-		"%s: the page structure changed, none of the expected data was there (run `github page %s` to see what arrived)",
+		"the page structure changed for %s, none of the expected data was there (run `github page %s` to see what arrived)",
 		what, what)
 }
 
@@ -119,11 +124,11 @@ func structureChanged(what string) error {
 // changed means the block is gone, bad payload means the block arrived and no
 // longer parses, which is usually a type change on one field.
 func badPayload(what string, err error) error {
-	return errs.New(errs.KindNetwork, "%s: the payload did not decode: %v", what, err)
+	return errs.New(errs.KindNetwork, "the payload for %s did not decode: %v", what, err)
 }
 
 // noJSONHere is what a 410 means. It is separated out so the message can say
 // the useful half: the data is reachable, just on a different surface.
 func noJSONHere(rawURL string) error {
-	return errs.Unsupported("%s serves no JSON; this is a page-only route", shortURL(rawURL))
+	return errs.Unsupported("no JSON at %s; this is a page-only route", shortURL(rawURL))
 }

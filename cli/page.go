@@ -102,9 +102,16 @@ func (c *pageCmd) run(ctx context.Context, args []string) error {
 			// GitHub's internal Relay identifiers, nobody knows them by heart,
 			// and a bare "not found" would send the reader off to dump the
 			// whole queries section to find out what to ask for.
-			// The message leads with a word rather than the URL because the
+			// Both messages lead with a word rather than the URL because the
 			// error renderer capitalises what it starts with, and a
 			// title-cased URL reads as a typo.
+			if len(p.Queries) == 0 {
+				// Worth saying separately. Most pages preload nothing, so
+				// listing the names it has would be an empty list, and an empty
+				// list reads like the lookup broke rather than like the page
+				// carries no queries at all.
+				return errs.NotFound("no preloaded queries on %s at all; that is normal, only a few page kinds have them", url)
+			}
 			return errs.NotFound("no query named %q on %s; it has %s",
 				c.query, url, strings.Join(queryNames(p.Queries), ", "))
 		}

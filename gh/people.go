@@ -621,7 +621,7 @@ func (c *Client) Activity(ctx context.Context, ref string, limit int, emit func(
 		}
 	}
 	if seen == 0 {
-		return errs.NotFound("%s: the feed carried no entries", shortURL(u))
+		return errs.NotFound("empty feed: %s carried no entries", shortURL(u))
 	}
 	return nil
 }
