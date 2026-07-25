@@ -106,6 +106,9 @@ func mergeBase(dst, src *Base) {
 		dst.URL = src.URL
 	}
 	dst.addSource(src.Sources...)
+	for field, tier := range src.Via {
+		recordVia(dst, field, tier)
+	}
 	dst.Extra = mergeExtra(dst.Extra, src.Extra)
 }
 
@@ -163,30 +166,14 @@ func recordConflicts(b *Base, conflicts map[string][]string) {
 	b.Extra = out
 }
 
-// recordVia notes which extraction tier produced a field. It is populated only
-// under --verbose, and it is what tells you that a field which used to arrive
-// from a JSON payload is now arriving from a class selector, which is the early
-// warning that something moved.
+// recordVia notes which extraction tier produced a field. It is what tells you
+// that a field which used to arrive from a JSON payload is now arriving from a
+// class selector, which is the early warning that something moved.
 func recordVia(b *Base, field, tier string) {
-	m := map[string]json.RawMessage{}
-	if len(b.Extra) > 0 {
-		_ = json.Unmarshal(b.Extra, &m)
+	if b.Via == nil {
+		b.Via = map[string]string{}
 	}
-	via := map[string]string{}
-	if raw, ok := m["_via"]; ok {
-		_ = json.Unmarshal(raw, &via)
-	}
-	via[field] = tier
-	raw, err := json.Marshal(via)
-	if err != nil {
-		return
-	}
-	m["_via"] = raw
-	out, err := json.Marshal(m)
-	if err != nil {
-		return
-	}
-	b.Extra = out
+	b.Via[field] = tier
 }
 
 // populated is the "did this surface actually say something" test. Absent is

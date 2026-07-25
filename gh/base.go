@@ -18,15 +18,20 @@ import (
 // names it, instead of the field being silently dropped for a year.
 
 // Base is embedded in every record. Kind and ID are the identity, URI and URL
-// are the two addresses, Sources records where the fields came from, and Extra
-// is the data-loss guard.
+// are the two addresses, Sources records which pages were read, Via records
+// which extraction tier produced a field, and Extra is the data-loss guard.
+//
+// Via is deliberately not part of Extra. Extra means "GitHub sent this and
+// nobody modelled it" and the suite asserts it is empty; provenance we wrote
+// ourselves has no business making that assertion fail.
 type Base struct {
-	Kind    string          `json:"kind"             table:"kind"`
-	ID      string          `json:"id"               table:"id" kit:"id"`
-	URI     string          `json:"uri,omitempty"    table:"-"`
-	URL     string          `json:"url,omitempty"    table:"-"`
-	Sources []string        `json:"sources,omitempty" table:"-"`
-	Extra   json.RawMessage `json:"extra,omitempty"  table:"-"`
+	Kind    string            `json:"kind"              table:"kind"`
+	ID      string            `json:"id"                table:"id" kit:"id"`
+	URI     string            `json:"uri,omitempty"     table:"-"`
+	URL     string            `json:"url,omitempty"     table:"-"`
+	Sources []string          `json:"sources,omitempty" table:"-"`
+	Via     map[string]string `json:"via,omitempty"     table:"-"`
+	Extra   json.RawMessage   `json:"extra,omitempty"   table:"-"`
 }
 
 // setIdentity fills Kind, ID, URI, and URL from a kind and an id. Every

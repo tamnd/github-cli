@@ -113,10 +113,10 @@ var ProfilePinnedItem = Sel{Tag: "li", Class: "js-pinned-item-list-item"}
 // no microformats, one pagehead block instead. These five are the whole of it.
 // Verified 2026-07-25 against golang.
 var (
-	OrgHead        = Sel{Tag: "header", Class: "orghead"}
-	OrgHeading     = Sel{Tag: "h1", Class: "h2"}
-	OrgAvatarImg   = Sel{Tag: "img", Attr: "itemprop", AttrValue: "image"}
-	OrgWebsite     = Sel{Tag: "a", Attr: "itemprop", AttrValue: "url"}
+	OrgHead       = Sel{Tag: "header", Class: "orghead"}
+	OrgHeading    = Sel{Tag: "h1", Class: "h2"}
+	OrgAvatarImg  = Sel{Tag: "img", Attr: "itemprop", AttrValue: "image"}
+	OrgWebsite    = Sel{Tag: "a", Attr: "itemprop", AttrValue: "url"}
 	OrgFollowers  = Sel{Tag: "a", Attr: "href", AttrContains: "/followers"}
 	OrgMemberLink = Sel{Tag: "a", Class: "member-avatar"}
 	// The location and email rows have no class or itemprop of their own, so
@@ -139,6 +139,57 @@ var (
 	ProfileVCardList  = Sel{Class: "vcard-details"}
 	ProfileAchieve    = Sel{Class: "js-profile-achievements"}
 )
+
+// --- discussion pages, /{owner}/{repo}/discussions/{n} ---
+
+// Discussions are the one thread type with no React payload at all: the page is
+// Rails, and the only structured block on it is a schema.org QAPage. So the
+// fields that block does not carry (category, labels, participants, the node
+// id) come from these, and everything here is checked against the JSON-LD where
+// the two overlap.
+// Verified 2026-07-25 against orgs/community#1 and google/docsy-example#479.
+var (
+	// The sidebar carries data-gid (the base64 node id) and data-url, which is
+	// the canonical /{owner}/{repo}/discussions/{n}/sidebar path and therefore
+	// the authority on which repository an /orgs/ URL belongs to.
+	DiscussionSidebar = Sel{Attr: "id", AttrValue: "partial-discussion-sidebar"}
+	DiscussionTitle   = Sel{Class: "js-issue-title"}
+	DiscussionNumber  = Sel{Class: "gh-header-number"}
+	// Every status pill in the header is a span.State. Which one it is comes
+	// from the title attribute: "Status: Closed as resolved", "Answered".
+	DiscussionState    = Sel{Tag: "span", Class: "State", Attr: "title"}
+	DiscussionCategory = Sel{Tag: "a", Attr: "href", AttrContains: "/discussions/categories/"}
+	// Labels carry the name in data-name, which is the raw name before the
+	// truncation span gets at it.
+	DiscussionLabel       = Sel{Tag: "a", Class: "IssueLabel", Attr: "data-name"}
+	DiscussionUpvote      = Sel{Class: "js-upvote-button", Attr: "aria-label"}
+	DiscussionComment     = Sel{Class: "js-comment-container", Attr: "data-gid"}
+	DiscussionBody        = Sel{Class: "js-comment-body"}
+	DiscussionAuthor      = Sel{Tag: "a", Class: "author"}
+	DiscussionParticipant = Sel{Tag: "a", Class: "participant-avatar"}
+	DiscussionAnswerLink  = Sel{Class: "js-discussions-goto-answer-button"}
+)
+
+// --- hovercards, /{owner}/{repo}/pull/{n}/hovercard ---
+
+// The hovercard is a small HTML fragment served to XHR requests. It is the only
+// keyless source for a pull request's body: the conversation route ships merge
+// metadata and nothing else. The body it gives is truncated to about a line and
+// a half, which is why the record calls it a snippet.
+// Verified 2026-07-25 against cli/cli#9000.
+var (
+	HovercardBody  = Sel{Class: "markdown-body-short"}
+	HovercardTitle = Sel{Class: "markdown-title"}
+	HovercardState = Sel{Tag: "span", Class: "State", Attr: "title"}
+	HovercardLabel = Sel{Class: "IssueLabel", Attr: "data-name"}
+	HovercardRef   = Sel{Class: "commit-ref"}
+)
+
+// --- shared ---
+
+// RelTimeEl is the <relative-time> custom element. Its datetime attribute is an
+// ISO timestamp; its text is "3 days ago" and is never parsed.
+var RelTimeEl = Sel{Tag: "relative-time", Attr: "datetime"}
 
 // --- repositories tab, /{login}?tab=repositories ---
 

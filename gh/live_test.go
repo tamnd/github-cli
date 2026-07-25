@@ -171,6 +171,171 @@ func TestLiveAccount(t *testing.T) {
 	})
 }
 
+// TestLiveThread covers the three thread surfaces, which is really three
+// unrelated decoders sharing a record. golang/go#1 is the oldest issue on the
+// site and has a milestone, a label, and eighty-eight timeline events, so it
+// exercises every branch of the Relay decoder at once.
+func TestLiveThread(t *testing.T) {
+	c := liveClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	t.Run("issue", func(t *testing.T) {
+		iss, err := c.Issue(ctx, "golang/go", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if iss.Kind != KindIssue || iss.Number != 1 {
+			t.Fatalf("identity: %+v", iss.Base)
+		}
+		if iss.Title == "" {
+			t.Error("title missing, the issue node stopped decoding")
+		}
+		if iss.Body == "" {
+			t.Error("body missing")
+		}
+		if iss.State != "closed" {
+			t.Errorf("state %q, expected the lowercased enum", iss.State)
+		}
+		if iss.Author.Login == "" {
+			t.Error("author missing")
+		}
+		if len(iss.Labels) == 0 {
+			t.Error("labels missing, the label edges moved")
+		}
+		if iss.Milestone == nil {
+			t.Error("milestone missing")
+		}
+		if iss.NodeID == "" || iss.DatabaseID == nil {
+			t.Error("ids missing")
+		}
+		logExtra(t, "issue", iss.Extra)
+	})
+
+	t.Run("issue_timeline", func(t *testing.T) {
+		n, comments := 0, 0
+		err := c.Timeline(ctx, "golang/go", 1, 20, func(it TimelineItem) error {
+			n++
+			if it.Type == "" {
+				t.Error("timeline item with no type")
+			}
+			if it.Type == "issue_comment" {
+				comments++
+				if it.Body == "" {
+					t.Error("comment with no body")
+				}
+			}
+			logExtra(t, "timeline "+it.Type, it.Extra)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatal("no timeline items, frontTimelineItems stopped decoding")
+		}
+		if comments == 0 {
+			t.Error("no comments in the timeline, the IssueComment shape changed")
+		}
+	})
+
+	t.Run("pull", func(t *testing.T) {
+		pr, err := c.PullRequest(ctx, "cli/cli", 9000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pr.Kind != KindPR || pr.Number != 9000 {
+			t.Fatalf("identity: %+v", pr.Base)
+		}
+		if pr.State != "merged" || !pr.Merged {
+			t.Errorf("state %q merged %v, the route stopped reporting the merge", pr.State, pr.Merged)
+		}
+		if pr.BaseRef == "" || pr.HeadRef == "" {
+			t.Error("refs missing")
+		}
+		if pr.HeadOID == "" {
+			t.Error("head sha missing")
+		}
+		if pr.MergedBy == nil {
+			t.Error("merged-by missing")
+		}
+		// The body only ever comes from the hovercard. If it is empty the
+		// fragment stopped answering, and the pull request record loses the one
+		// field the route cannot supply.
+		if pr.Body == "" {
+			t.Error("body missing, the hovercard fragment stopped answering")
+		}
+		logExtra(t, "pull", pr.Extra)
+	})
+
+	t.Run("pull_commits", func(t *testing.T) {
+		n := 0
+		err := c.PullCommits(ctx, "cli/cli", 9000, 10, func(cm Commit) error {
+			n++
+			if cm.SHA == "" || cm.Subject == "" {
+				t.Errorf("thin commit: %+v", cm)
+			}
+			if len(cm.Authors) == 0 {
+				t.Errorf("%s has no authors", cm.SHA)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatal("no commits, commitGroups stopped decoding")
+		}
+	})
+
+	t.Run("discussion", func(t *testing.T) {
+		d, err := c.Discussion(ctx, "google/docsy-example", 479)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Repo != "google/docsy-example" {
+			t.Errorf("repo %q, the sidebar data-url shape changed", d.Repo)
+		}
+		if d.Title == "" {
+			t.Error("title missing")
+		}
+		if d.BodyHTML == "" {
+			t.Error("body missing, the QAPage block stopped carrying text")
+		}
+		if !d.IsAnswered {
+			t.Error("answered flag missing, both the pill and acceptedAnswer stopped matching")
+		}
+		if d.Category == "" {
+			t.Error("category missing, the sidebar link stopped matching")
+		}
+		if d.Upvotes == nil {
+			t.Error("upvotes missing")
+		}
+		if d.NodeID == "" {
+			t.Error("node id missing, data-gid stopped matching")
+		}
+		logExtra(t, "discussion", d.Extra)
+	})
+
+	t.Run("org_discussion", func(t *testing.T) {
+		// An organization discussion is served from /orgs/{login}/ and the
+		// record still has to name the repository that owns it.
+		d, err := c.Discussion(ctx, "community", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(d.Repo, "/") {
+			t.Errorf("repo %q is not owner/name", d.Repo)
+		}
+		if d.Author.Login == "" {
+			t.Error("author missing")
+		}
+		if len(d.Labels) == 0 {
+			t.Error("labels missing")
+		}
+	})
+}
+
 // TestLiveSearch walks every search type that works without a session. It is
 // one test rather than nine because the value is in the comparison: when one
 // type changes shape and the other eight do not, the failure says so.

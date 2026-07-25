@@ -114,6 +114,14 @@ func structureChanged(what string) error {
 		what, what)
 }
 
+// badPayload is a decode failure on a block that was there. It is separate from
+// structureChanged because the two send you to different places: structure
+// changed means the block is gone, bad payload means the block arrived and no
+// longer parses, which is usually a type change on one field.
+func badPayload(what string, err error) error {
+	return errs.New(errs.KindNetwork, "%s: the payload did not decode: %v", what, err)
+}
+
 // noJSONHere is what a 410 means. It is separated out so the message can say
 // the useful half: the data is reachable, just on a different surface.
 func noJSONHere(rawURL string) error {
