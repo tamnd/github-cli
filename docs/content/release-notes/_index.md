@@ -10,6 +10,14 @@ Every tagged version builds the same set of artifacts: archives for Linux, macOS
 Binaries are pure Go, so there is nothing to install alongside them.
 Archives and checksums are signed with cosign; see [installation](/getting-started/installation/) for the verify command.
 
+## v0.2.1
+
+Three fixes found by turning the linter on.
+
+- `github archive -o` closed the file it wrote with a deferred close whose error went nowhere, and a close is where the last of a write gets flushed. It now closes by hand and reports the failure.
+- A 406 or a 410 from a JSON route was handed to the decoder, so the error you saw was the decoder's opinion of the HTML it got. Both statuses mean the same thing, and it now says so: no JSON at this route, use another surface.
+- The exported `Page` URL builder said it escaped every path segment and did not, which held up until the first branch with a space in its name.
+
 ## v0.2.0
 
 The keyless rewrite.
